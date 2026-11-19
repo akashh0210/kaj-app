@@ -11,8 +11,13 @@ import multer from 'multer'
 import { initDb, getTenantCollection } from './db.js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import fs from 'fs'
+import { execFileSync } from 'child_process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const UPLOADS_DIR = path.join(__dirname, 'uploads')
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true })
+}
 
 // ── Database (Firestore on Cloud Run / GCP, or local JSON store fallback) ──────
 const { db, Timestamp } = await initDb()
@@ -51,34 +56,44 @@ async function writeAuditLog(tenantId, entry) {
   })
 }
 
+function formatDateOnly(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function computeVisitSchedule(startDate, endDate, frequency) {
   if (!startDate) return []
   const freqMap = { monthly: 1, quarterly: 3, 'half-yearly': 6, yearly: 12 }
   const intervalMonths = freqMap[frequency?.toLowerCase()] ?? 3
 
   const visits = []
-  const start = new Date(startDate)
+  const [sy, sm] = startDate.split('-').map(Number)
   const end = endDate ? new Date(endDate) : null
 
-  let current = new Date(start.getFullYear(), start.getMonth(), 1)
-  const maxVisits = 60 // safety cap
+  let currentYear = sy
+  let currentMonth = sm - 1
+  const maxVisits = 60
   let count = 0
 
   while (count < maxVisits) {
-    if (end && current > end) break
-    visits.push(current.toISOString().split('T')[0])
-    current = new Date(current.getFullYear(), current.getMonth() + intervalMonths, 1)
+    const currentDate = new Date(currentYear, currentMonth, 1)
+    if (end && currentDate > end) break
+    visits.push(formatDateOnly(currentDate))
+    currentMonth += intervalMonths
     count++
-    if (!end && count >= 12) break // cap at 12 for open-ended
+    if (!end && count >= 12) break
   }
   return visits
 }
 
 function computeRenewalReminder(endDate) {
   if (!endDate) return null
-  const d = new Date(endDate)
-  d.setDate(d.getDate() - 30)
-  return d.toISOString().split('T')[0]
+  const [y, m, d] = endDate.split('-').map(Number)
+  const dateObj = new Date(y, m - 1, d)
+  dateObj.setDate(dateObj.getDate() - 30)
+  return formatDateOnly(dateObj)
 }
 
 // ── Contract extraction with Gemini ─────────────────────────────────────────
@@ -114,6 +129,140 @@ Return JSON matching this schema exactly:
   "needs_review": []
 }`
 
+// ── Helper: PDF text extraction ──────────────────────────────────────────────
+function extractTextFromPdf(filePath) {
+  try {
+    const pyScript = path.join(__dirname, 'scripts', 'extract_pdf.py')
+    const output = execFileSync('python', [pyScript, filePath], { encoding: 'utf8' })
+    return output.trim()
+  } catch (e) {
+    console.warn('PDF text extraction fallback warning:', e.message)
+    return ''
+  }
+}
+
+// ── Rule-based contract text parser (implements kaj-contract-extraction rules) ─
+function parseContractText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  const result = {
+    provider_name: null,
+    contract_no: null,
+    client_name: null,
+    site_address: null,
+    equipment: [],
+    start_date: null,
+    end_date: null,
+    visit_frequency: null,
+    visit_schedule: [],
+    contract_value: null,
+    gst_extra: null,
+    payment_terms: null,
+    renewal_reminder_date: null,
+    extras_chargeable: null,
+    needs_review: [],
+  }
+
+  if (/das cooling services/i.test(text)) {
+    result.provider_name = 'Das Cooling Services'
+  }
+
+  const findVal = (labelRegex) => {
+    const idx = lines.findIndex(l => labelRegex.test(l))
+    if (idx !== -1 && idx + 1 < lines.length) {
+      return lines[idx + 1]
+    }
+    return null
+  }
+
+  const cNo = findVal(/^Contract\s*No\.?/i)
+  if (cNo && !/^\s*(Client|Site|Equipment|Date)\b/i.test(cNo)) {
+    result.contract_no = cNo.trim()
+  } else {
+    const cMatch = text.match(/([A-Z0-9]{2,}\/[A-Z0-9/_-]+)/)
+    if (cMatch) result.contract_no = cMatch[1].trim()
+  }
+
+  const cName = findVal(/^Client/i)
+  if (cName) result.client_name = cName.trim()
+
+  const sAddr = findVal(/^Site\s*address/i)
+  if (sAddr) result.site_address = sAddr.trim()
+
+  const rawEquip = findVal(/^Equipment\s*covered/i)
+  if (rawEquip) {
+    rawEquip.split(/[,;]/).forEach(item => {
+      const qMatch = item.match(/(\d+)\s*([a-zA-Z\s]+?)(?:\s*\(([^)]+)\))?(?:\s*units?)?$/i)
+      if (qMatch) {
+        result.equipment.push({
+          quantity: parseInt(qMatch[1], 10),
+          type: qMatch[2].trim(),
+          capacity: qMatch[3] ? qMatch[3].trim() : null,
+        })
+      }
+    })
+  }
+
+  const months = {
+    jan: '01', january: '01', feb: '02', february: '02', mar: '03', march: '03',
+    apr: '04', april: '04', may: '05', jun: '06', june: '06',
+    jul: '07', july: '07', aug: '08', august: '08', sep: '09', september: '09',
+    oct: '10', october: '10', nov: '11', november: '11', dec: '12', december: '12',
+  }
+  const parseDateStr = (str) => {
+    if (!str) return null
+    const dMatch = str.match(/(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})/)
+    if (dMatch) {
+      const day = dMatch[1].padStart(2, '0')
+      const month = months[dMatch[2].toLowerCase()]
+      const year = dMatch[3]
+      if (month) return `${year}-${month}-${day}`
+    }
+    const isoMatch = str.match(/(\d{4})-(\d{2})-(\d{2})/)
+    if (isoMatch) return str.match(/\d{4}-\d{2}-\d{2}/)[0]
+    return null
+  }
+
+  const rawPeriod = findVal(/^Contract\s*period/i)
+  if (rawPeriod) {
+    if (rawPeriod.includes(' to ')) {
+      const [startStr, endStr] = rawPeriod.split(' to ')
+      result.start_date = parseDateStr(startStr)
+      result.end_date = parseDateStr(endStr)
+    } else {
+      const singleDate = parseDateStr(rawPeriod)
+      if (singleDate) {
+        result.start_date = singleDate
+        result.end_date = null
+        result.needs_review.push('Only one date given; assumed as start date, please confirm.')
+      }
+    }
+  }
+
+  const rawFreq = findVal(/^Service\s*visits/i)
+  if (rawFreq) {
+    const fStr = rawFreq.toLowerCase()
+    if (fStr.includes('monthly')) result.visit_frequency = 'Monthly'
+    else if (fStr.includes('quarterly')) result.visit_frequency = 'Quarterly'
+    else if (fStr.includes('half-yearly') || fStr.includes('half yearly')) result.visit_frequency = 'Half-yearly'
+    else if (fStr.includes('yearly') || fStr.includes('annual')) result.visit_frequency = 'Yearly'
+  }
+
+  const rawVal = findVal(/^Contract\s*value/i)
+  if (rawVal) {
+    const numMatch = rawVal.match(/Rs\.?\s*([\d,]+)/i)
+    if (numMatch) result.contract_value = parseInt(numMatch[1].replace(/,/g, ''), 10)
+    if (/plus\s*gst|gst\s*extra/i.test(rawVal)) result.gst_extra = true
+    else if (/incl/i.test(rawVal)) result.gst_extra = false
+  }
+
+  const pTerms = findVal(/^Payment\s*terms/i)
+  if (pTerms) result.payment_terms = pTerms.trim()
+
+  if (/charged\s*extra/i.test(text)) result.extras_chargeable = true
+
+  return result
+}
+
 async function extractContractWithModel(modelName, content, mimeType) {
   const genAI = geminiClient()
   const model = genAI.getGenerativeModel({
@@ -136,19 +285,27 @@ async function extractContractWithModel(modelName, content, mimeType) {
   return JSON.parse(text)
 }
 
-async function extractContract(content, mimeType) {
-  let parsed = await extractContractWithModel(MODEL_PRIMARY, content, mimeType)
+async function extractContract(content, mimeType, rawText = '') {
+  let parsed = null
 
-  // If more than 2 fields flagged, retry with fallback model
-  if (parsed.needs_review && parsed.needs_review.length > 2) {
+  if (GEMINI_API_KEY) {
     try {
-      const fallback = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
-      if (fallback.needs_review.length < parsed.needs_review.length) {
-        parsed = fallback
+      parsed = await extractContractWithModel(MODEL_PRIMARY, content, mimeType)
+      if (parsed.needs_review && parsed.needs_review.length > 2) {
+        try {
+          const fallback = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
+          if (fallback.needs_review.length < parsed.needs_review.length) {
+            parsed = fallback
+          }
+        } catch (_) {}
       }
-    } catch (_) {
-      // Keep primary result if fallback fails
+    } catch (e) {
+      console.warn('Gemini extraction failed, falling back to rule-based parser:', e.message)
     }
+  }
+
+  if (!parsed) {
+    parsed = parseContractText(rawText || (mimeType === 'text/plain' ? content : ''))
   }
 
   // Code-computed fields (not AI)
@@ -167,10 +324,34 @@ async function extractContract(content, mimeType) {
   return parsed
 }
 
+// ── Static file serving ──────────────────────────────────────────────────────
+app.use('/uploads', express.static(UPLOADS_DIR))
+app.use('/demo-data', express.static(path.join(__dirname, 'demo-data')))
+
 // ── API Routes ───────────────────────────────────────────────────────────────
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+
+// Rate card
+app.get('/api/rate-card', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req)
+    const snap = await col(tenantId, 'rate_card').get()
+    if (!snap.empty) {
+      return res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }
+    const defaultRateCard = [
+      { id: 'gas_top_up_r32', item: 'Gas top-up (R32)', price: 1800, unit: 'unit' },
+      { id: 'filter_replacement', item: 'Filter replacement', price: 450, unit: 'unit' },
+      { id: 'capacitor_replacement', item: 'Capacitor replacement', price: 650, unit: 'unit' },
+      { id: 'jet_pump_wash', item: 'Jet-pump wash', price: 600, unit: 'unit' },
+    ]
+    res.json(defaultRateCard)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
 
 // --- Contracts ---
 app.get('/api/contracts', async (req, res) => {
@@ -186,23 +367,37 @@ app.get('/api/contracts', async (req, res) => {
 app.post('/api/contracts/extract', upload.single('file'), async (req, res) => {
   try {
     const tenantId = getTenantId(req)
-    let content, mimeType
+    let content, mimeType, rawText = ''
+    let sourceRef = 'pasted-text'
+    let sourceUrl = null
 
     if (req.file) {
-      const buffer = fs.readFileSync(req.file.path)
+      sourceRef = req.file.originalname
+      // Persist uploaded file so source link works
+      const targetPath = path.join(UPLOADS_DIR, req.file.originalname)
+      fs.copyFileSync(req.file.path, targetPath)
+      fs.unlinkSync(req.file.path)
+      sourceUrl = `/uploads/${encodeURIComponent(req.file.originalname)}`
+
+      const buffer = fs.readFileSync(targetPath)
       content = buffer.toString('base64')
-      mimeType = req.file.mimetype
-      fs.unlinkSync(req.file.path) // clean up temp
+      mimeType = req.file.mimetype || 'application/pdf'
+
+      if (mimeType === 'application/pdf' || req.file.originalname.endsWith('.pdf')) {
+        rawText = extractTextFromPdf(targetPath)
+      }
     } else if (req.body.text) {
       content = req.body.text
       mimeType = 'text/plain'
+      rawText = req.body.text
     } else {
       return res.status(400).json({ error: 'Provide a file or text field.' })
     }
 
-    const extracted = await extractContract(content, mimeType)
+    const extracted = await extractContract(content, mimeType, rawText)
     extracted.tenant_id = tenantId
-    extracted.source_ref = req.file?.originalname || 'pasted-text'
+    extracted.source_ref = sourceRef
+    extracted.source_url = sourceUrl
     extracted.status = 'pending_review'
     extracted.created_at = Timestamp.now()
 
@@ -223,12 +418,40 @@ app.post('/api/contracts', async (req, res) => {
         return res.status(400).json({ error: `Invalid date in field ${field}` })
       }
     }
-    // Guardrail: amounts must appear in source (we store null if not extracted)
     data.tenant_id = tenantId
     data.created_at = Timestamp.now()
     data.status = 'confirmed'
 
-    const ref = await col(tenantId, 'contracts').add(data)
+    const docId = data.contract_no ? data.contract_no.replace(/\//g, '-') : null
+    let ref
+    if (docId) {
+      await col(tenantId, 'contracts').doc(docId).set(data)
+      ref = { id: docId }
+    } else {
+      ref = await col(tenantId, 'contracts').add(data)
+    }
+
+    // Generate scheduled visits in visits collection from visit_schedule
+    if (Array.isArray(data.visit_schedule)) {
+      for (const date of data.visit_schedule) {
+        const visitDocId = `${data.contract_no?.replace(/\//g, '-') || ref.id}_${date}`
+        const existingVisit = await col(tenantId, 'visits').doc(visitDocId).get()
+        if (!existingVisit.exists) {
+          await col(tenantId, 'visits').doc(visitDocId).set({
+            contract_no: data.contract_no,
+            client_name: data.client_name,
+            site_address: data.site_address,
+            scheduled_date: date,
+            status: 'scheduled',
+            units: data.equipment?.map(e => ({ type: e.type, quantity: e.quantity })) || [],
+            technician: 'Raju Das',
+            tenant_id: tenantId,
+            source_ref: data.source_ref || 'visit-schedule',
+          })
+        }
+      }
+    }
+
     await writeAuditLog(tenantId, {
       action: 'contract_confirmed',
       contract_id: ref.id,
@@ -613,4 +836,8 @@ if (fs.existsSync(distPath)) {
 
 // ── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => console.log(`KAJ API server running on port ${PORT}`))
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => console.log(`KAJ API server running on port ${PORT}`))
+}
+
+export { app, extractContract, parseContractText, extractTextFromPdf }

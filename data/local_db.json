@@ -7,14 +7,14 @@
       "site_address": "Block C, Salt Lake Sector II, Kolkata",
       "equipment": [
         {
-          "type": "Split AC",
-          "capacity": "1.5 ton",
-          "quantity": 6
+          "quantity": 6,
+          "type": "split AC units",
+          "capacity": "1.5 ton"
         },
         {
-          "type": "Window AC",
-          "capacity": "1 ton",
-          "quantity": 2
+          "quantity": 2,
+          "type": "window AC units",
+          "capacity": "1 ton"
         }
       ],
       "start_date": "2026-04-01",
@@ -33,12 +33,12 @@
       "extras_chargeable": true,
       "needs_review": [],
       "status": "confirmed",
-      "source_ref": "C1_greenview.pdf",
       "tenant_id": "das-cooling-services",
+      "source_ref": "C1_greenview.pdf",
       "created_at": {
-        "_date": "2026-04-01T00:00:00.000Z",
-        "seconds": 1775001600,
-        "nanoseconds": 0
+        "_date": "2026-11-19T15:32:30.681Z",
+        "seconds": 1795102350,
+        "nanoseconds": 681000000
       }
     },
     "DCS-AMC-2026-052": {
@@ -48,9 +48,9 @@
       "site_address": "12 Ballygunge Place, Kolkata",
       "equipment": [
         {
-          "type": "Split AC",
-          "capacity": "2 ton",
-          "quantity": 3
+          "quantity": 3,
+          "type": "split AC units",
+          "capacity": "2 ton"
         }
       ],
       "start_date": "2026-06-01",
@@ -79,13 +79,13 @@
         "Only one date given; assumed as start date, please confirm.",
         "end_date missing; renewal_reminder_date cannot be computed."
       ],
-      "status": "pending_review",
-      "source_ref": "C2_ballygunge_dental.pdf",
+      "status": "confirmed",
       "tenant_id": "das-cooling-services",
+      "source_ref": "C2_ballygunge_dental.pdf",
       "created_at": {
-        "_date": "2026-06-01T00:00:00.000Z",
-        "seconds": 1780272000,
-        "nanoseconds": 0
+        "_date": "2026-11-19T15:32:30.682Z",
+        "seconds": 1795102350,
+        "nanoseconds": 682000000
       }
     },
     "DCS-AMC-2026-063": {
