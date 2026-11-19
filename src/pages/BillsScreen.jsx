@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchInvoices, markInvoicePaid, draftReminder, approveReminder, markReminderSent } from '../api.js'
+import { fetchInvoices, markInvoicePaid, draftReminder, approveReminder, markReminderSent, setExtraPrice } from '../api.js'
 
 function formatRs(n) {
   if (!n && n !== 0) return '—'
@@ -73,9 +73,27 @@ export default function BillsScreen({ showToast }) {
     await load()
   }
 
-  const overdue = invoices.filter(i => i.status !== 'paid' && i.days_overdue > 0)
-  const upcoming = invoices.filter(i => i.status !== 'paid' && i.days_overdue === 0)
-  const paid = invoices.filter(i => i.status === 'paid')
+  const [pricingId, setPricingId] = useState(null)
+  const [customPrice, setCustomPrice] = useState('')
+
+  async function handleSavePrice(invId) {
+    if (!customPrice || isNaN(customPrice)) return showToast('Enter a valid price')
+    try {
+      await setExtraPrice(invId, { unit_price: Number(customPrice), quantity: 1 })
+      showToast('Price set ✓')
+      setPricingId(null)
+      setCustomPrice('')
+      await load()
+    } catch (e) {
+      showToast('Error: ' + e.message)
+    }
+  }
+
+  const unbilledExtras = invoices.filter(i => i.is_extra && i.status === 'draft')
+  const regularInvoices = invoices.filter(i => !i.is_extra || i.status !== 'draft')
+  const overdue = regularInvoices.filter(i => i.status !== 'paid' && i.days_overdue > 0)
+  const upcoming = regularInvoices.filter(i => i.status !== 'paid' && i.days_overdue === 0)
+  const paid = regularInvoices.filter(i => i.status === 'paid')
 
   return (
     <div>
@@ -83,10 +101,69 @@ export default function BillsScreen({ showToast }) {
 
       {loading ? <div className="spinner" /> : (
         <>
+          {/* Unbilled Extras (Bill lines from voice notes) */}
+          {unbilledExtras.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div className="section-header">
+                <h2 style={{ color: 'var(--accent)' }}>Unbilled Extras from Visits ({unbilledExtras.length})</h2>
+              </div>
+              {unbilledExtras.map(extra => (
+                <div key={extra.id} className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
+                  <div className="card-row">
+                    <div style={{ flex: 1 }}>
+                      <div className="card-title">{extra.client_name}</div>
+                      <div className="card-sub">{extra.item || extra.description} × {extra.quantity || 1}</div>
+                      {extra.needs_owner_pricing ? (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="badge badge-warning">⚠ Not on rate card — Owner price required</span>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="badge badge-primary">Rate: {formatRs(extra.unit_price)}/unit</span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="card-amount" style={{ color: extra.amount ? 'var(--primary)' : 'var(--accent)' }}>
+                        {extra.amount !== null ? formatRs(extra.amount) : 'Needs Price'}
+                      </div>
+                      <div className="card-sub">{extra.gst_extra ? '+GST' : 'incl. GST'}</div>
+                    </div>
+                  </div>
+
+                  {extra.needs_owner_pricing && (
+                    <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {pricingId === extra.id ? (
+                        <>
+                          <input
+                            type="number"
+                            className="input"
+                            style={{ width: 120, padding: '4px 8px', fontSize: '.85rem' }}
+                            placeholder="Price in Rs"
+                            value={customPrice}
+                            onChange={e => setCustomPrice(e.target.value)}
+                          />
+                          <button className="btn btn-success btn-sm" onClick={() => handleSavePrice(extra.id)}>Save</button>
+                          <button className="btn btn-outline btn-sm" onClick={() => { setPricingId(null); setCustomPrice('') }}>Cancel</button>
+                        </>
+                      ) : (
+                        <button className="btn btn-outline btn-sm" onClick={() => { setPricingId(extra.id); setCustomPrice('') }}>
+                          ✏ Set Price
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="source-tag">📎 Source: {extra.source_ref}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {overdue.length > 0 && (
             <>
               <div className="section-header">
-                <h2 style={{ color: 'var(--danger)' }}>⚠ Overdue ({overdue.length})</h2>
+                <h2 style={{ color: 'var(--danger)' }}>⚠ Overdue Invoices ({overdue.length})</h2>
               </div>
               {overdue.map(inv => <InvoiceCard key={inv.id} inv={inv} onReminder={() => handleDraftReminder(inv)} onMarkPaid={() => handleMarkPaid(inv)} />)}
             </>
@@ -94,7 +171,7 @@ export default function BillsScreen({ showToast }) {
 
           {upcoming.length > 0 && (
             <>
-              <div className="section-header" style={{ marginTop: 8 }}><h2>Upcoming</h2></div>
+              <div className="section-header" style={{ marginTop: 8 }}><h2>Upcoming Invoices</h2></div>
               {upcoming.map(inv => <InvoiceCard key={inv.id} inv={inv} onMarkPaid={() => handleMarkPaid(inv)} />)}
             </>
           )}
@@ -106,7 +183,7 @@ export default function BillsScreen({ showToast }) {
             </>
           )}
 
-          {invoices.length === 0 && <div className="empty-state"><p>No invoices yet.</p></div>}
+          {invoices.length === 0 && <div className="empty-state"><p>No invoices or bill lines yet.</p></div>}
         </>
       )}
 

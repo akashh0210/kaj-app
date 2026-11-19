@@ -504,7 +504,24 @@ app.get('/api/visits', async (req, res) => {
   }
 })
 
-// Submit technician visit update (creates pending update awaiting owner confirmation)
+// Helper: Match extra work against rate card
+function matchRateCard(itemName, rateCard) {
+  if (!itemName) return null
+  const clean = itemName.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim()
+  for (const rc of rateCard) {
+    const rcClean = rc.item.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim()
+    if (clean.includes(rcClean) || rcClean.includes(clean)) return rc
+    if (clean.includes('gas') && rcClean.includes('gas')) return rc
+    if (clean.includes('filter') && rcClean.includes('filter')) return rc
+    if (clean.includes('capacitor') && rcClean.includes('capacitor')) return rc
+    if (clean.includes('jet') && rcClean.includes('jet')) return rc
+    if (clean.includes('pump') && rcClean.includes('pump')) return rc
+    if (clean.includes('wash') && rcClean.includes('wash')) return rc
+  }
+  return null
+}
+
+// Submit technician visit update (creates pending update awaiting owner confirmation & maps extra work to rate card)
 app.post('/api/visits/:id/submit-update', async (req, res) => {
   try {
     const tenantId = getTenantId(req)
@@ -513,6 +530,61 @@ app.post('/api/visits/:id/submit-update', async (req, res) => {
 
     const docSnap = await col(tenantId, 'visits').doc(id).get()
     if (!docSnap.exists) return res.status(404).json({ error: 'Visit not found' })
+    const vData = docSnap.data()
+
+    // Fetch rate card
+    let rateCard = []
+    const rcSnap = await col(tenantId, 'rate_card').get()
+    if (!rcSnap.empty) {
+      rateCard = rcSnap.docs.map(d => d.data())
+    } else {
+      rateCard = [
+        { id: 'gas_top_up_r32', item: 'Gas top-up (R32)', price: 1800, unit: 'unit' },
+        { id: 'filter_replacement', item: 'Filter replacement', price: 450, unit: 'unit' },
+        { id: 'capacitor_replacement', item: 'Capacitor replacement', price: 650, unit: 'unit' },
+        { id: 'jet_pump_wash', item: 'Jet-pump wash', price: 600, unit: 'unit' },
+      ]
+    }
+
+    // Map extra_work to rate card and create draft bill lines
+    const draftBillLines = []
+    const todayStr = new Date().toISOString().split('T')[0]
+
+    if (Array.isArray(updateData.extra_work) && updateData.extra_work.length > 0) {
+      for (let i = 0; i < updateData.extra_work.length; i++) {
+        const extra = updateData.extra_work[i]
+        if (!extra || !extra.item) continue
+        const matched = matchRateCard(extra.item, rateCard)
+        const qty = Number(extra.quantity) || 1
+        const unitPrice = matched ? matched.price : null
+        const amount = unitPrice !== null ? unitPrice * qty : null
+
+        const draftDocId = `DRAFT-EXTRA-${id}-${i + 1}`
+        const draftLine = {
+          invoice_no: draftDocId,
+          client_name: vData.client_name,
+          contract_no: vData.contract_no,
+          visit_id: id,
+          item: extra.item,
+          quantity: qty,
+          unit_price: unitPrice,
+          amount: amount,
+          rate_card_item: matched ? matched.item : null,
+          is_extra: true,
+          status: 'draft',
+          gst_extra: true,
+          needs_owner_pricing: matched === null,
+          review_note: matched === null ? `Item '${extra.item}' not found on rate card; price required from owner.` : null,
+          source_ref: updateData.source_ref || 'voice-note',
+          created_date: todayStr,
+          created_at: Timestamp.now(),
+          tenant_id: tenantId,
+        }
+
+        await col(tenantId, 'invoices').doc(draftDocId).set(draftLine)
+        draftBillLines.push(draftLine)
+      }
+    }
 
     await col(tenantId, 'visits').doc(id).update({
       status: 'pending_confirmation',
@@ -521,6 +593,7 @@ app.post('/api/visits/:id/submit-update', async (req, res) => {
         units_serviced: updateData.units_serviced || [],
         units_pending: updateData.units_pending || [],
         extra_work: updateData.extra_work || [],
+        draft_bill_lines: draftBillLines,
         source_ref: updateData.source_ref || 'voice-note',
         submitted_by: updateData.submitted_by || 'technician',
         submitted_at: Timestamp.now(),
@@ -533,9 +606,41 @@ app.post('/api/visits/:id/submit-update', async (req, res) => {
       visit_id: id,
       who: updateData.submitted_by || 'technician',
       source_ref: updateData.source_ref,
+      extras_count: draftBillLines.length,
     })
 
-    res.json({ id, status: 'pending_confirmation' })
+    res.json({ id, status: 'pending_confirmation', draftBillLines })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Owner sets price for an unlisted extra bill line
+app.patch('/api/invoices/:id/set-price', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req)
+    const { id } = req.params
+    const { unit_price, quantity } = req.body
+    const qty = quantity || 1
+    const amount = Number(unit_price) * qty
+
+    await col(tenantId, 'invoices').doc(id).update({
+      unit_price: Number(unit_price),
+      quantity: qty,
+      amount,
+      needs_owner_pricing: false,
+      review_note: null,
+      updated_at: Timestamp.now(),
+    })
+
+    await writeAuditLog(tenantId, {
+      action: 'extra_priced_by_owner',
+      invoice_id: id,
+      who: req.body.who || 'owner',
+      amount,
+    })
+
+    res.json({ id, unit_price: Number(unit_price), amount })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

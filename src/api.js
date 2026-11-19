@@ -112,6 +112,14 @@ export async function markInvoicePaid(id, who = 'owner') {
   }))
 }
 
+export async function setExtraPrice(id, { unit_price, quantity }) {
+  return handleResponse(await fetch(`/api/invoices/${id}/set-price`, {
+    method: 'PATCH',
+    headers: headers(),
+    body: JSON.stringify({ unit_price, quantity, who: 'owner' }),
+  }))
+}
+
 // --- Reminders ---
 export async function draftReminder(payload) {
   return handleResponse(await fetch('/api/reminders/draft', {
