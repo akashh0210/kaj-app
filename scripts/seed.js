@@ -1,10 +1,16 @@
-// Seed script: Populates Firestore with demo data for Das Cooling Services.
-// Run once: node scripts/seed.js
-// Demo data: 1 provider, 5 contracts, 8 visits, 3 invoices (1 overdue 36+ days), 1 renewal in 30 days.
+// Seed script: Populates Firestore / local store with demo data from demo-data/KAJ_Demo_Data
+// Contracts: C1, C2, C3 from AnswerKey.csv
+// Invoices: I1, I2, I3 with exact due dates and amounts
+// Rate card: JSON for extra work
+// Visits: generated from contract schedules including today's visits and unbilled extras
 
 import 'dotenv/config'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { initDb, getTenantCollection } from '../db.js'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const { db, Timestamp } = await initDb()
 
 const TENANT_ID = process.env.TENANT_ID || 'das-cooling-services'
@@ -21,129 +27,76 @@ function today() {
   return new Date().toISOString().split('T')[0]
 }
 
-function daysAgo(n) {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  return d.toISOString().split('T')[0]
-}
-
-function daysFromNow(n) {
-  const d = new Date()
-  d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
-}
-
 async function seed() {
-  console.log(`Seeding tenant: ${TENANT_ID}`)
+  console.log(`Seeding demo data for tenant: ${TENANT_ID}`)
+  const todayStr = today()
 
-  // ── Contracts (5) ─────────────────────────────────────────────────────────
+  // ── Clear existing collections to cleanly replace synthetic data ────────────
+  for (const subcol of ['contracts', 'invoices', 'visits', 'rate_card', 'reminders', 'audit_log']) {
+    const snap = await col(subcol).get()
+    for (const doc of snap.docs) {
+      await col(subcol).doc(doc.id).delete()
+    }
+  }
+  console.log('✓ Cleared previous tenant collections')
+
+  // ── Rate Card (JSON) ────────────────────────────────────────────────────────
+  const rateCard = [
+    { id: 'gas_top_up_r32', item: 'Gas top-up (R32)', price: 1800, unit: 'unit' },
+    { id: 'filter_replacement', item: 'Filter replacement', price: 450, unit: 'unit' },
+    { id: 'capacitor_replacement', item: 'Capacitor replacement', price: 650, unit: 'unit' },
+    { id: 'jet_pump_wash', item: 'Jet-pump wash', price: 600, unit: 'unit' },
+  ]
+
+  for (const item of rateCard) {
+    await col('rate_card').doc(item.id).set(item)
+  }
+  console.log('✓ Rate card saved (4 items)')
+
+  // ── Contracts C1, C2, C3 (from AnswerKey.csv) ──────────────────────────────
   const contracts = [
     {
       provider_name: 'Das Cooling Services',
-      contract_no: 'DCS/2026/001',
+      contract_no: 'DCS/AMC/2026/041',
       client_name: 'Greenview Housing Society',
-      site_address: 'Block C, Greenview Society, Salt Lake, Kolkata 700091',
-      equipment: [{ type: 'Split AC', capacity: '1.5 ton', quantity: 6 }],
+      site_address: 'Block C, Salt Lake Sector II, Kolkata',
+      equipment: [
+        { type: 'Split AC', capacity: '1.5 ton', quantity: 6 },
+        { type: 'Window AC', capacity: '1 ton', quantity: 2 },
+      ],
       start_date: '2026-04-01',
       end_date: '2027-03-31',
-      visit_frequency: 'quarterly',
+      visit_frequency: 'Quarterly',
       visit_schedule: ['2026-04-01', '2026-07-01', '2026-10-01', '2027-01-01'],
       contract_value: 38500,
       gst_extra: true,
-      payment_terms: 'Quarterly advance',
+      payment_terms: '50% advance, balance within 30 days of the second visit',
       renewal_reminder_date: '2027-03-01',
       extras_chargeable: true,
       needs_review: [],
       status: 'confirmed',
-      source_ref: 'DCS-2026-001.pdf',
+      source_ref: 'C1_greenview.pdf',
       tenant_id: TENANT_ID,
       created_at: ts('2026-04-01'),
     },
     {
       provider_name: 'Das Cooling Services',
-      contract_no: 'DCS/2026/002',
-      client_name: 'Sunrise Office Park',
-      site_address: '5th Floor, Sunrise Tower, Sector V, Kolkata 700156',
+      contract_no: 'DCS/AMC/2026/052',
+      client_name: 'Ballygunge Dental Clinic',
+      site_address: '12 Ballygunge Place, Kolkata',
       equipment: [
-        { type: 'Cassette AC', capacity: '2 ton', quantity: 4 },
-        { type: 'Split AC', capacity: '1 ton', quantity: 2 },
+        { type: 'Split AC', capacity: '2 ton', quantity: 3 },
       ],
-      start_date: '2026-01-01',
-      end_date: '2026-12-31',
-      visit_frequency: 'monthly',
+      start_date: '2026-06-01',
+      end_date: null,
+      visit_frequency: 'Monthly',
       visit_schedule: [
-        '2026-01-01','2026-02-01','2026-03-01','2026-04-01','2026-05-01','2026-06-01',
-        '2026-07-01','2026-08-01','2026-09-01','2026-10-01','2026-11-01','2026-12-01',
+        '2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01', '2026-10-01', '2026-11-01',
+        '2026-12-01', '2027-01-01', '2027-02-01', '2027-03-01', '2027-04-01', '2027-05-01',
       ],
       contract_value: 54000,
       gst_extra: true,
-      payment_terms: 'Monthly',
-      renewal_reminder_date: daysFromNow(12), // renewal coming soon
-      extras_chargeable: true,
-      needs_review: [],
-      status: 'confirmed',
-      source_ref: 'DCS-2026-002.pdf',
-      tenant_id: TENANT_ID,
-      created_at: ts('2026-01-01'),
-    },
-    {
-      provider_name: 'Das Cooling Services',
-      contract_no: 'DCS/2026/003',
-      client_name: 'City Hospital',
-      site_address: 'Ward Block A, City Hospital, EM Bypass, Kolkata 700099',
-      equipment: [{ type: 'Central AC', capacity: '5 ton', quantity: 2 }],
-      start_date: '2026-06-01',
-      end_date: '2027-05-31',
-      visit_frequency: 'monthly',
-      visit_schedule: [
-        '2026-06-01','2026-07-01','2026-08-01','2026-09-01','2026-10-01','2026-11-01','2026-12-01',
-        '2027-01-01','2027-02-01','2027-03-01','2027-04-01','2027-05-01',
-      ],
-      contract_value: 72000,
-      gst_extra: true,
-      payment_terms: 'Bi-annual',
-      renewal_reminder_date: '2027-05-01',
-      extras_chargeable: false,
-      needs_review: [],
-      status: 'confirmed',
-      source_ref: 'DCS-2026-003.pdf',
-      tenant_id: TENANT_ID,
-      created_at: ts('2026-06-01'),
-    },
-    {
-      provider_name: 'Das Cooling Services',
-      contract_no: 'DCS/2026/004',
-      client_name: 'Metro Mall',
-      site_address: 'Ground Floor, Metro Mall, Rajarhat, Kolkata 700136',
-      equipment: [{ type: 'VRF System', capacity: '10 ton', quantity: 1 }],
-      start_date: '2026-03-01',
-      end_date: '2027-02-28',
-      visit_frequency: 'half-yearly',
-      visit_schedule: ['2026-03-01', '2026-09-01'],
-      contract_value: 95000,
-      gst_extra: true,
-      payment_terms: 'Advance',
-      renewal_reminder_date: '2027-01-27',
-      extras_chargeable: true,
-      needs_review: [],
-      status: 'confirmed',
-      source_ref: 'DCS-2026-004.pdf',
-      tenant_id: TENANT_ID,
-      created_at: ts('2026-03-01'),
-    },
-    {
-      provider_name: 'Das Cooling Services',
-      contract_no: 'DCS/2026/005',
-      client_name: 'Sen Air Solutions Office',
-      site_address: '2nd Floor, Rabindra Sarani, Kolkata 700003',
-      equipment: [{ type: 'Window AC', capacity: '1.5 ton', quantity: 3 }],
-      start_date: '2026-06-01',
-      end_date: null,
-      visit_frequency: 'quarterly',
-      visit_schedule: ['2026-06-01', '2026-09-01', '2026-12-01', '2027-03-01'],
-      contract_value: 18000,
-      gst_extra: true,
-      payment_terms: 'On visit',
+      payment_terms: 'Quarterly in advance',
       renewal_reminder_date: null,
       extras_chargeable: true,
       needs_review: [
@@ -151,183 +104,249 @@ async function seed() {
         'end_date missing; renewal_reminder_date cannot be computed.',
       ],
       status: 'pending_review',
-      source_ref: 'DCS-2026-005.pdf',
+      source_ref: 'C2_ballygunge_dental.pdf',
       tenant_id: TENANT_ID,
       created_at: ts('2026-06-01'),
+    },
+    {
+      provider_name: 'Das Cooling Services',
+      contract_no: 'DCS/AMC/2026/063',
+      client_name: 'Park Street Flavours Cafe',
+      site_address: '24 Park Street, Kolkata',
+      equipment: [
+        { type: 'Cassette AC', capacity: '2 ton', quantity: 4 },
+      ],
+      start_date: '2026-07-01',
+      end_date: '2027-06-30',
+      visit_frequency: 'Half-yearly',
+      visit_schedule: ['2026-07-01', '2027-01-01'],
+      contract_value: 26000,
+      gst_extra: true,
+      payment_terms: '100% advance',
+      renewal_reminder_date: '2027-05-31',
+      extras_chargeable: true,
+      needs_review: [],
+      status: 'confirmed',
+      source_ref: 'C3_parkstreet_cafe.pdf',
+      tenant_id: TENANT_ID,
+      created_at: ts('2026-07-01'),
     },
   ]
 
   for (const c of contracts) {
-    await col('contracts').doc(c.contract_no.replace(/\//g, '-')).set(c)
-    console.log('  Contract:', c.contract_no)
+    const docId = c.contract_no.replace(/\//g, '-')
+    await col('contracts').doc(docId).set(c)
+    console.log('✓ Contract:', c.contract_no, '-', c.client_name)
   }
 
-  // ── Visits (8) ─────────────────────────────────────────────────────────────
-  const todayStr = today()
-  const visits = [
-    {
-      contract_no: 'DCS/2026/001',
-      client_name: 'Greenview Housing Society',
-      site_address: 'Block C, Greenview Society, Salt Lake, Kolkata 700091',
-      scheduled_date: todayStr,
-      status: 'scheduled',
-      units: [{ type: 'Split AC', quantity: 6 }],
-      technician: 'Raju Das',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-    {
-      contract_no: 'DCS/2026/002',
-      client_name: 'Sunrise Office Park',
-      site_address: '5th Floor, Sunrise Tower, Sector V, Kolkata 700156',
-      scheduled_date: todayStr,
-      status: 'done',
-      units: [{ type: 'Cassette AC', quantity: 4 }],
-      technician: 'Bikash Sen',
-      confirmed_by: 'owner',
-      confirmed_at: ts(todayStr),
-      job_summary: 'All 4 cassette units serviced, filters cleaned, gas checked.',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-    {
-      contract_no: 'DCS/2026/003',
-      client_name: 'City Hospital',
-      site_address: 'Ward Block A, City Hospital, EM Bypass, Kolkata 700099',
-      scheduled_date: todayStr,
-      status: 'scheduled',
-      units: [{ type: 'Central AC', quantity: 2 }],
-      technician: 'Raju Das',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-    {
-      contract_no: 'DCS/2026/001',
-      client_name: 'Greenview Housing Society',
-      site_address: 'Block C, Greenview Society, Salt Lake, Kolkata 700091',
-      scheduled_date: daysAgo(7),
-      status: 'done',
-      units: [{ type: 'Split AC', quantity: 6 }],
-      technician: 'Raju Das',
-      confirmed_by: 'owner',
-      confirmed_at: ts(daysAgo(7)),
-      job_summary: 'Routine service, all units OK.',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-    {
-      contract_no: 'DCS/2026/004',
-      client_name: 'Metro Mall',
-      site_address: 'Ground Floor, Metro Mall, Rajarhat, Kolkata 700136',
-      scheduled_date: daysAgo(14),
-      status: 'done',
-      units: [{ type: 'VRF System', quantity: 1 }],
-      technician: 'Bikash Sen',
-      confirmed_by: 'owner',
-      confirmed_at: ts(daysAgo(14)),
-      job_summary: 'VRF system full service. One compressor cleaned.',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-    {
-      contract_no: 'DCS/2026/002',
-      client_name: 'Sunrise Office Park',
-      site_address: '5th Floor, Sunrise Tower, Sector V, Kolkata 700156',
-      scheduled_date: daysFromNow(1),
-      status: 'scheduled',
-      units: [{ type: 'Split AC', quantity: 2 }],
-      technician: 'Raju Das',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-    {
-      contract_no: 'DCS/2026/005',
-      client_name: 'Sen Air Solutions Office',
-      site_address: '2nd Floor, Rabindra Sarani, Kolkata 700003',
-      scheduled_date: daysFromNow(3),
-      status: 'scheduled',
-      units: [{ type: 'Window AC', quantity: 3 }],
-      technician: 'Raju Das',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-    {
-      contract_no: 'DCS/2026/003',
-      client_name: 'City Hospital',
-      site_address: 'Ward Block A, City Hospital, EM Bypass, Kolkata 700099',
-      scheduled_date: daysAgo(3),
-      status: 'done',
-      units: [{ type: 'Central AC', quantity: 2 }],
-      technician: 'Bikash Sen',
-      confirmed_by: 'owner',
-      confirmed_at: ts(daysAgo(3)),
-      job_summary: 'Monthly service done. Coil cleaned.',
-      tenant_id: TENANT_ID,
-      source_ref: 'visit-schedule',
-    },
-  ]
-
-  for (let i = 0; i < visits.length; i++) {
-    await col('visits').add(visits[i])
-    console.log('  Visit:', visits[i].client_name, visits[i].scheduled_date)
-  }
-
-  // ── Invoices (3: 1 overdue 36 days, 1 overdue, 1 recent) ──────────────────
+  // ── Invoices I1, I2, I3 (from demo data & AnswerKey.csv) ───────────────────
   const invoices = [
     {
       invoice_no: 'DCS/INV/2026/118',
       client_name: 'Greenview Housing Society',
-      contract_no: 'DCS/2026/001',
+      contract_no: 'DCS/AMC/2026/041',
       amount: 19250,
       gst_extra: true,
-      due_date: daysAgo(36),
+      due_date: '2026-10-15', // 36 days overdue on 2026-11-20
       status: 'overdue',
       is_extra: false,
       client_phone: '+919830012345',
       tenant_id: TENANT_ID,
-      source_ref: 'invoice-generated',
-      created_date: daysAgo(45),
-      created_at: ts(daysAgo(45)),
+      source_ref: 'I1_greenview.pdf',
+      created_date: '2026-09-15',
+      created_at: ts('2026-09-15'),
     },
     {
-      invoice_no: 'DCS/INV/2026/119',
-      client_name: 'Sunrise Office Park',
-      contract_no: 'DCS/2026/002',
-      amount: 13500,
+      invoice_no: 'DCS/INV/2026/131',
+      client_name: 'Park Street Flavours Cafe',
+      contract_no: 'DCS/AMC/2026/063',
+      amount: 13000,
       gst_extra: true,
-      due_date: daysAgo(10),
+      due_date: '2026-11-10', // 10 days overdue on 2026-11-20
       status: 'overdue',
       is_extra: false,
       client_phone: '+919831023456',
       tenant_id: TENANT_ID,
-      source_ref: 'invoice-generated',
-      created_date: daysAgo(20),
-      created_at: ts(daysAgo(20)),
+      source_ref: 'I2_parkstreet_cafe.pdf',
+      created_date: '2026-10-27',
+      created_at: ts('2026-10-27'),
     },
     {
-      invoice_no: 'DCS/INV/2026/120',
-      client_name: 'City Hospital',
-      contract_no: 'DCS/2026/003',
-      amount: 9000,
+      invoice_no: 'DCS/INV/2026/140',
+      client_name: 'New Town IT Office (Brightlane Technologies)',
+      contract_no: 'DCS/AMC/2026/007',
+      amount: 18000,
       gst_extra: true,
-      due_date: daysFromNow(15),
+      due_date: '2026-11-30', // not yet due (10 days left on 2026-11-20)
       status: 'pending',
       is_extra: false,
       client_phone: '+919832034567',
       tenant_id: TENANT_ID,
-      source_ref: 'invoice-generated',
-      created_date: daysAgo(5),
-      created_at: ts(daysAgo(5)),
+      source_ref: 'I3_newtown_office.pdf',
+      created_date: '2026-11-15',
+      created_at: ts('2026-11-15'),
     },
   ]
 
   for (const inv of invoices) {
-    await col('invoices').doc(inv.invoice_no.replace(/\//g, '-')).set(inv)
-    console.log('  Invoice:', inv.invoice_no)
+    const docId = inv.invoice_no.replace(/\//g, '-')
+    await col('invoices').doc(docId).set(inv)
+    console.log('✓ Invoice:', inv.invoice_no, '- Due:', inv.due_date, 'Rs', inv.amount)
   }
 
-  console.log('\n✅ Seed complete! Tenant:', TENANT_ID)
+  // ── Unbilled Extras (Draft bill lines from V1 & V2 extra work) ─────────────
+  const unbilledExtras = [
+    {
+      invoice_no: 'DRAFT-EXTRA-001',
+      client_name: 'Greenview Housing Society',
+      contract_no: 'DCS/AMC/2026/041',
+      description: 'Gas top-up (R32) x1 unit',
+      extra_items: [{ item: 'Gas top-up (R32)', quantity: 1, unit_price: 1800, amount: 1800 }],
+      amount: 1800,
+      gst_extra: true,
+      status: 'draft',
+      is_extra: true,
+      source_ref: 'voice-note-V1',
+      tenant_id: TENANT_ID,
+      created_date: todayStr,
+      created_at: ts(todayStr),
+    },
+    {
+      invoice_no: 'DRAFT-EXTRA-002',
+      client_name: 'Park Street Flavours Cafe',
+      contract_no: 'DCS/AMC/2026/063',
+      description: 'Filter replacement x1 unit',
+      extra_items: [{ item: 'Filter replacement', quantity: 1, unit_price: 450, amount: 450 }],
+      amount: 450,
+      gst_extra: true,
+      status: 'draft',
+      is_extra: true,
+      source_ref: 'voice-note-V2',
+      tenant_id: TENANT_ID,
+      created_date: todayStr,
+      created_at: ts(todayStr),
+    },
+  ]
+
+  for (const extra of unbilledExtras) {
+    await col('invoices').doc(extra.invoice_no).set(extra)
+    console.log('✓ Unbilled Extra:', extra.invoice_no, '-', extra.description)
+  }
+
+  // ── Visits generated from contract schedules ───────────────────────────────
+  // Includes visits scheduled for today so "Visits due today" card shows real visits
+  const visits = [
+    // Today's scheduled visits
+    {
+      contract_no: 'DCS/AMC/2026/041',
+      client_name: 'Greenview Housing Society',
+      site_address: 'Block C, Salt Lake Sector II, Kolkata',
+      scheduled_date: todayStr,
+      status: 'scheduled',
+      units: [
+        { type: 'Split AC', quantity: 6 },
+        { type: 'Window AC', quantity: 2 },
+      ],
+      technician: 'Raju Das',
+      tenant_id: TENANT_ID,
+      source_ref: 'C1_greenview.pdf',
+    },
+    {
+      contract_no: 'DCS/AMC/2026/052',
+      client_name: 'Ballygunge Dental Clinic',
+      site_address: '12 Ballygunge Place, Kolkata',
+      scheduled_date: todayStr,
+      status: 'scheduled',
+      units: [{ type: 'Split AC', quantity: 3 }],
+      technician: 'Bikash Sen',
+      tenant_id: TENANT_ID,
+      source_ref: 'C2_ballygunge_dental.pdf',
+    },
+    // Past completed visits with job summaries
+    {
+      contract_no: 'DCS/AMC/2026/041',
+      client_name: 'Greenview Housing Society',
+      site_address: 'Block C, Salt Lake Sector II, Kolkata',
+      scheduled_date: '2026-10-01',
+      status: 'done',
+      units: [
+        { type: 'Split AC', quantity: 6 },
+        { type: 'Window AC', quantity: 2 },
+      ],
+      technician: 'Raju Das',
+      confirmed_by: 'owner',
+      confirmed_at: ts('2026-10-01'),
+      job_summary: '4 split ACs serviced, 2 split ACs pending. 1 gas top-up done on unit 3.',
+      tenant_id: TENANT_ID,
+      source_ref: 'voice-note-V1',
+    },
+    {
+      contract_no: 'DCS/AMC/2026/063',
+      client_name: 'Park Street Flavours Cafe',
+      site_address: '24 Park Street, Kolkata',
+      scheduled_date: '2026-07-01',
+      status: 'done',
+      units: [{ type: 'Cassette AC', quantity: 4 }],
+      technician: 'Bikash Sen',
+      confirmed_by: 'owner',
+      confirmed_at: ts('2026-07-01'),
+      job_summary: 'All 4 cassette units serviced. Replaced 1 air filter as requested.',
+      tenant_id: TENANT_ID,
+      source_ref: 'voice-note-V2',
+    },
+    {
+      contract_no: 'DCS/AMC/2026/052',
+      client_name: 'Ballygunge Dental Clinic',
+      site_address: '12 Ballygunge Place, Kolkata',
+      scheduled_date: '2026-10-01',
+      status: 'done',
+      units: [{ type: 'Split AC', quantity: 3 }],
+      technician: 'Raju Das',
+      confirmed_by: 'owner',
+      confirmed_at: ts('2026-10-01'),
+      job_summary: 'Routine monthly service on 3 split units completed.',
+      tenant_id: TENANT_ID,
+      source_ref: 'voice-note-V4',
+    },
+    // Future visits from schedule
+    {
+      contract_no: 'DCS/AMC/2026/041',
+      client_name: 'Greenview Housing Society',
+      site_address: 'Block C, Salt Lake Sector II, Kolkata',
+      scheduled_date: '2027-01-01',
+      status: 'scheduled',
+      units: [
+        { type: 'Split AC', quantity: 6 },
+        { type: 'Window AC', quantity: 2 },
+      ],
+      technician: 'Raju Das',
+      tenant_id: TENANT_ID,
+      source_ref: 'C1_greenview.pdf',
+    },
+    {
+      contract_no: 'DCS/AMC/2026/063',
+      client_name: 'Park Street Flavours Cafe',
+      site_address: '24 Park Street, Kolkata',
+      scheduled_date: '2027-01-01',
+      status: 'scheduled',
+      units: [{ type: 'Cassette AC', quantity: 4 }],
+      technician: 'Bikash Sen',
+      tenant_id: TENANT_ID,
+      source_ref: 'C3_parkstreet_cafe.pdf',
+    },
+  ]
+
+  for (const v of visits) {
+    const docId = `${v.contract_no.replace(/\//g, '-')}_${v.scheduled_date}`
+    await col('visits').doc(docId).set(v)
+    console.log('✓ Visit:', v.client_name, '-', v.scheduled_date, `[${v.status}]`)
+  }
+
+  console.log('\n✅ Demo seed complete!')
   process.exit(0)
 }
 
-seed().catch(e => { console.error('Seed failed:', e); process.exit(1) })
+seed().catch(e => {
+  console.error('Seed failed:', e)
+  process.exit(1)
+})

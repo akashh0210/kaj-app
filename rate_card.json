@@ -1,0 +1,26 @@
+[
+  {
+    "id": "gas_top_up_r32",
+    "item": "Gas top-up (R32)",
+    "price": 1800,
+    "unit": "unit"
+  },
+  {
+    "id": "filter_replacement",
+    "item": "Filter replacement",
+    "price": 450,
+    "unit": "unit"
+  },
+  {
+    "id": "capacitor_replacement",
+    "item": "Capacitor replacement",
+    "price": 650,
+    "unit": "unit"
+  },
+  {
+    "id": "jet_pump_wash",
+    "item": "Jet-pump wash",
+    "price": 600,
+    "unit": "unit"
+  }
+]

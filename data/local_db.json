@@ -1,20 +1,25 @@
 {
   "tenants/das-cooling-services/contracts": {
-    "DCS-2026-001": {
+    "DCS-AMC-2026-041": {
       "provider_name": "Das Cooling Services",
-      "contract_no": "DCS/2026/001",
+      "contract_no": "DCS/AMC/2026/041",
       "client_name": "Greenview Housing Society",
-      "site_address": "Block C, Greenview Society, Salt Lake, Kolkata 700091",
+      "site_address": "Block C, Salt Lake Sector II, Kolkata",
       "equipment": [
         {
           "type": "Split AC",
           "capacity": "1.5 ton",
           "quantity": 6
+        },
+        {
+          "type": "Window AC",
+          "capacity": "1 ton",
+          "quantity": 2
         }
       ],
       "start_date": "2026-04-01",
       "end_date": "2027-03-31",
-      "visit_frequency": "quarterly",
+      "visit_frequency": "Quarterly",
       "visit_schedule": [
         "2026-04-01",
         "2026-07-01",
@@ -23,12 +28,12 @@
       ],
       "contract_value": 38500,
       "gst_extra": true,
-      "payment_terms": "Quarterly advance",
+      "payment_terms": "50% advance, balance within 30 days of the second visit",
       "renewal_reminder_date": "2027-03-01",
       "extras_chargeable": true,
       "needs_review": [],
       "status": "confirmed",
-      "source_ref": "DCS-2026-001.pdf",
+      "source_ref": "C1_greenview.pdf",
       "tenant_id": "das-cooling-services",
       "created_at": {
         "_date": "2026-04-01T00:00:00.000Z",
@@ -36,70 +41,21 @@
         "nanoseconds": 0
       }
     },
-    "DCS-2026-002": {
+    "DCS-AMC-2026-052": {
       "provider_name": "Das Cooling Services",
-      "contract_no": "DCS/2026/002",
-      "client_name": "Sunrise Office Park",
-      "site_address": "5th Floor, Sunrise Tower, Sector V, Kolkata 700156",
+      "contract_no": "DCS/AMC/2026/052",
+      "client_name": "Ballygunge Dental Clinic",
+      "site_address": "12 Ballygunge Place, Kolkata",
       "equipment": [
-        {
-          "type": "Cassette AC",
-          "capacity": "2 ton",
-          "quantity": 4
-        },
         {
           "type": "Split AC",
-          "capacity": "1 ton",
-          "quantity": 2
-        }
-      ],
-      "start_date": "2026-01-01",
-      "end_date": "2026-12-31",
-      "visit_frequency": "monthly",
-      "visit_schedule": [
-        "2026-01-01",
-        "2026-02-01",
-        "2026-03-01",
-        "2026-04-01",
-        "2026-05-01",
-        "2026-06-01",
-        "2026-07-01",
-        "2026-08-01",
-        "2026-09-01",
-        "2026-10-01",
-        "2026-11-01",
-        "2026-12-01"
-      ],
-      "contract_value": 54000,
-      "gst_extra": true,
-      "payment_terms": "Monthly",
-      "renewal_reminder_date": "2026-12-01",
-      "extras_chargeable": true,
-      "needs_review": [],
-      "status": "confirmed",
-      "source_ref": "DCS-2026-002.pdf",
-      "tenant_id": "das-cooling-services",
-      "created_at": {
-        "_date": "2026-01-01T00:00:00.000Z",
-        "seconds": 1767225600,
-        "nanoseconds": 0
-      }
-    },
-    "DCS-2026-003": {
-      "provider_name": "Das Cooling Services",
-      "contract_no": "DCS/2026/003",
-      "client_name": "City Hospital",
-      "site_address": "Ward Block A, City Hospital, EM Bypass, Kolkata 700099",
-      "equipment": [
-        {
-          "type": "Central AC",
-          "capacity": "5 ton",
-          "quantity": 2
+          "capacity": "2 ton",
+          "quantity": 3
         }
       ],
       "start_date": "2026-06-01",
-      "end_date": "2027-05-31",
-      "visit_frequency": "monthly",
+      "end_date": null,
+      "visit_frequency": "Monthly",
       "visit_schedule": [
         "2026-06-01",
         "2026-07-01",
@@ -114,79 +70,9 @@
         "2027-04-01",
         "2027-05-01"
       ],
-      "contract_value": 72000,
+      "contract_value": 54000,
       "gst_extra": true,
-      "payment_terms": "Bi-annual",
-      "renewal_reminder_date": "2027-05-01",
-      "extras_chargeable": false,
-      "needs_review": [],
-      "status": "confirmed",
-      "source_ref": "DCS-2026-003.pdf",
-      "tenant_id": "das-cooling-services",
-      "created_at": {
-        "_date": "2026-06-01T00:00:00.000Z",
-        "seconds": 1780272000,
-        "nanoseconds": 0
-      }
-    },
-    "DCS-2026-004": {
-      "provider_name": "Das Cooling Services",
-      "contract_no": "DCS/2026/004",
-      "client_name": "Metro Mall",
-      "site_address": "Ground Floor, Metro Mall, Rajarhat, Kolkata 700136",
-      "equipment": [
-        {
-          "type": "VRF System",
-          "capacity": "10 ton",
-          "quantity": 1
-        }
-      ],
-      "start_date": "2026-03-01",
-      "end_date": "2027-02-28",
-      "visit_frequency": "half-yearly",
-      "visit_schedule": [
-        "2026-03-01",
-        "2026-09-01"
-      ],
-      "contract_value": 95000,
-      "gst_extra": true,
-      "payment_terms": "Advance",
-      "renewal_reminder_date": "2027-01-27",
-      "extras_chargeable": true,
-      "needs_review": [],
-      "status": "confirmed",
-      "source_ref": "DCS-2026-004.pdf",
-      "tenant_id": "das-cooling-services",
-      "created_at": {
-        "_date": "2026-03-01T00:00:00.000Z",
-        "seconds": 1772323200,
-        "nanoseconds": 0
-      }
-    },
-    "DCS-2026-005": {
-      "provider_name": "Das Cooling Services",
-      "contract_no": "DCS/2026/005",
-      "client_name": "Sen Air Solutions Office",
-      "site_address": "2nd Floor, Rabindra Sarani, Kolkata 700003",
-      "equipment": [
-        {
-          "type": "Window AC",
-          "capacity": "1.5 ton",
-          "quantity": 3
-        }
-      ],
-      "start_date": "2026-06-01",
-      "end_date": null,
-      "visit_frequency": "quarterly",
-      "visit_schedule": [
-        "2026-06-01",
-        "2026-09-01",
-        "2026-12-01",
-        "2027-03-01"
-      ],
-      "contract_value": 18000,
-      "gst_extra": true,
-      "payment_terms": "On visit",
+      "payment_terms": "Quarterly in advance",
       "renewal_reminder_date": null,
       "extras_chargeable": true,
       "needs_review": [
@@ -194,37 +80,118 @@
         "end_date missing; renewal_reminder_date cannot be computed."
       ],
       "status": "pending_review",
-      "source_ref": "DCS-2026-005.pdf",
+      "source_ref": "C2_ballygunge_dental.pdf",
       "tenant_id": "das-cooling-services",
       "created_at": {
         "_date": "2026-06-01T00:00:00.000Z",
         "seconds": 1780272000,
         "nanoseconds": 0
       }
+    },
+    "DCS-AMC-2026-063": {
+      "provider_name": "Das Cooling Services",
+      "contract_no": "DCS/AMC/2026/063",
+      "client_name": "Park Street Flavours Cafe",
+      "site_address": "24 Park Street, Kolkata",
+      "equipment": [
+        {
+          "type": "Cassette AC",
+          "capacity": "2 ton",
+          "quantity": 4
+        }
+      ],
+      "start_date": "2026-07-01",
+      "end_date": "2027-06-30",
+      "visit_frequency": "Half-yearly",
+      "visit_schedule": [
+        "2026-07-01",
+        "2027-01-01"
+      ],
+      "contract_value": 26000,
+      "gst_extra": true,
+      "payment_terms": "100% advance",
+      "renewal_reminder_date": "2027-05-31",
+      "extras_chargeable": true,
+      "needs_review": [],
+      "status": "confirmed",
+      "source_ref": "C3_parkstreet_cafe.pdf",
+      "tenant_id": "das-cooling-services",
+      "created_at": {
+        "_date": "2026-07-01T00:00:00.000Z",
+        "seconds": 1782864000,
+        "nanoseconds": 0
+      }
     }
   },
   "tenants/das-cooling-services/visits": {
-    "c72383ff-ac16-40c1-b15f-bfa77ba7853a": {
-      "contract_no": "DCS/2026/001",
+    "DCS-AMC-2026-041_2026-11-19": {
+      "contract_no": "DCS/AMC/2026/041",
       "client_name": "Greenview Housing Society",
-      "site_address": "Block C, Greenview Society, Salt Lake, Kolkata 700091",
+      "site_address": "Block C, Salt Lake Sector II, Kolkata",
       "scheduled_date": "2026-11-19",
       "status": "scheduled",
       "units": [
         {
           "type": "Split AC",
           "quantity": 6
+        },
+        {
+          "type": "Window AC",
+          "quantity": 2
         }
       ],
       "technician": "Raju Das",
       "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
+      "source_ref": "C1_greenview.pdf"
     },
-    "2e0d1caf-638a-487f-8455-0a77c5a3d71d": {
-      "contract_no": "DCS/2026/002",
-      "client_name": "Sunrise Office Park",
-      "site_address": "5th Floor, Sunrise Tower, Sector V, Kolkata 700156",
+    "DCS-AMC-2026-052_2026-11-19": {
+      "contract_no": "DCS/AMC/2026/052",
+      "client_name": "Ballygunge Dental Clinic",
+      "site_address": "12 Ballygunge Place, Kolkata",
       "scheduled_date": "2026-11-19",
+      "status": "scheduled",
+      "units": [
+        {
+          "type": "Split AC",
+          "quantity": 3
+        }
+      ],
+      "technician": "Bikash Sen",
+      "tenant_id": "das-cooling-services",
+      "source_ref": "C2_ballygunge_dental.pdf"
+    },
+    "DCS-AMC-2026-041_2026-10-01": {
+      "contract_no": "DCS/AMC/2026/041",
+      "client_name": "Greenview Housing Society",
+      "site_address": "Block C, Salt Lake Sector II, Kolkata",
+      "scheduled_date": "2026-10-01",
+      "status": "done",
+      "units": [
+        {
+          "type": "Split AC",
+          "quantity": 6
+        },
+        {
+          "type": "Window AC",
+          "quantity": 2
+        }
+      ],
+      "technician": "Raju Das",
+      "confirmed_by": "owner",
+      "confirmed_at": {
+        "_date": "2026-10-01T00:00:00.000Z",
+        "seconds": 1790812800,
+        "nanoseconds": 0
+      },
+      "job_summary": "4 split ACs serviced, 2 split ACs pending. 1 gas top-up done on unit 3.",
+      "tenant_id": "das-cooling-services",
+      "source_ref": "voice-note-V1"
+    },
+    "DCS-AMC-2026-063_2026-07-01": {
+      "contract_no": "DCS/AMC/2026/063",
+      "client_name": "Park Street Flavours Cafe",
+      "site_address": "24 Park Street, Kolkata",
+      "scheduled_date": "2026-07-01",
       "status": "done",
       "units": [
         {
@@ -235,189 +202,211 @@
       "technician": "Bikash Sen",
       "confirmed_by": "owner",
       "confirmed_at": {
-        "_date": "2026-11-19T00:00:00.000Z",
-        "seconds": 1795046400,
+        "_date": "2026-07-01T00:00:00.000Z",
+        "seconds": 1782864000,
         "nanoseconds": 0
       },
-      "job_summary": "All 4 cassette units serviced, filters cleaned, gas checked.",
+      "job_summary": "All 4 cassette units serviced. Replaced 1 air filter as requested.",
       "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
+      "source_ref": "voice-note-V2"
     },
-    "31314045-6910-4cff-8b64-ca06bc9d527e": {
-      "contract_no": "DCS/2026/003",
-      "client_name": "City Hospital",
-      "site_address": "Ward Block A, City Hospital, EM Bypass, Kolkata 700099",
-      "scheduled_date": "2026-11-19",
-      "status": "scheduled",
-      "units": [
-        {
-          "type": "Central AC",
-          "quantity": 2
-        }
-      ],
-      "technician": "Raju Das",
-      "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
-    },
-    "eec6b3ce-67fe-460f-983a-04ea87276d20": {
-      "contract_no": "DCS/2026/001",
-      "client_name": "Greenview Housing Society",
-      "site_address": "Block C, Greenview Society, Salt Lake, Kolkata 700091",
-      "scheduled_date": "2026-11-12",
+    "DCS-AMC-2026-052_2026-10-01": {
+      "contract_no": "DCS/AMC/2026/052",
+      "client_name": "Ballygunge Dental Clinic",
+      "site_address": "12 Ballygunge Place, Kolkata",
+      "scheduled_date": "2026-10-01",
       "status": "done",
       "units": [
         {
           "type": "Split AC",
-          "quantity": 6
-        }
-      ],
-      "technician": "Raju Das",
-      "confirmed_by": "owner",
-      "confirmed_at": {
-        "_date": "2026-11-12T00:00:00.000Z",
-        "seconds": 1794441600,
-        "nanoseconds": 0
-      },
-      "job_summary": "Routine service, all units OK.",
-      "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
-    },
-    "e5746842-bb6e-4347-9e43-a49c7537e696": {
-      "contract_no": "DCS/2026/004",
-      "client_name": "Metro Mall",
-      "site_address": "Ground Floor, Metro Mall, Rajarhat, Kolkata 700136",
-      "scheduled_date": "2026-11-05",
-      "status": "done",
-      "units": [
-        {
-          "type": "VRF System",
-          "quantity": 1
-        }
-      ],
-      "technician": "Bikash Sen",
-      "confirmed_by": "owner",
-      "confirmed_at": {
-        "_date": "2026-11-05T00:00:00.000Z",
-        "seconds": 1793836800,
-        "nanoseconds": 0
-      },
-      "job_summary": "VRF system full service. One compressor cleaned.",
-      "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
-    },
-    "f4923c38-d2ba-43fc-9f42-ae805e139d37": {
-      "contract_no": "DCS/2026/002",
-      "client_name": "Sunrise Office Park",
-      "site_address": "5th Floor, Sunrise Tower, Sector V, Kolkata 700156",
-      "scheduled_date": "2026-11-20",
-      "status": "scheduled",
-      "units": [
-        {
-          "type": "Split AC",
-          "quantity": 2
-        }
-      ],
-      "technician": "Raju Das",
-      "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
-    },
-    "f3bf6c2b-ff8a-453a-90c8-81bbbfca3127": {
-      "contract_no": "DCS/2026/005",
-      "client_name": "Sen Air Solutions Office",
-      "site_address": "2nd Floor, Rabindra Sarani, Kolkata 700003",
-      "scheduled_date": "2026-11-22",
-      "status": "scheduled",
-      "units": [
-        {
-          "type": "Window AC",
           "quantity": 3
         }
       ],
       "technician": "Raju Das",
+      "confirmed_by": "owner",
+      "confirmed_at": {
+        "_date": "2026-10-01T00:00:00.000Z",
+        "seconds": 1790812800,
+        "nanoseconds": 0
+      },
+      "job_summary": "Routine monthly service on 3 split units completed.",
       "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
+      "source_ref": "voice-note-V4"
     },
-    "7a35dbca-8c94-44d5-9f01-08ea488feb0b": {
-      "contract_no": "DCS/2026/003",
-      "client_name": "City Hospital",
-      "site_address": "Ward Block A, City Hospital, EM Bypass, Kolkata 700099",
-      "scheduled_date": "2026-11-16",
-      "status": "done",
+    "DCS-AMC-2026-041_2027-01-01": {
+      "contract_no": "DCS/AMC/2026/041",
+      "client_name": "Greenview Housing Society",
+      "site_address": "Block C, Salt Lake Sector II, Kolkata",
+      "scheduled_date": "2027-01-01",
+      "status": "scheduled",
       "units": [
         {
-          "type": "Central AC",
+          "type": "Split AC",
+          "quantity": 6
+        },
+        {
+          "type": "Window AC",
           "quantity": 2
         }
       ],
-      "technician": "Bikash Sen",
-      "confirmed_by": "owner",
-      "confirmed_at": {
-        "_date": "2026-11-16T00:00:00.000Z",
-        "seconds": 1794787200,
-        "nanoseconds": 0
-      },
-      "job_summary": "Monthly service done. Coil cleaned.",
+      "technician": "Raju Das",
       "tenant_id": "das-cooling-services",
-      "source_ref": "visit-schedule"
+      "source_ref": "C1_greenview.pdf"
+    },
+    "DCS-AMC-2026-063_2027-01-01": {
+      "contract_no": "DCS/AMC/2026/063",
+      "client_name": "Park Street Flavours Cafe",
+      "site_address": "24 Park Street, Kolkata",
+      "scheduled_date": "2027-01-01",
+      "status": "scheduled",
+      "units": [
+        {
+          "type": "Cassette AC",
+          "quantity": 4
+        }
+      ],
+      "technician": "Bikash Sen",
+      "tenant_id": "das-cooling-services",
+      "source_ref": "C3_parkstreet_cafe.pdf"
     }
   },
   "tenants/das-cooling-services/invoices": {
     "DCS-INV-2026-118": {
       "invoice_no": "DCS/INV/2026/118",
       "client_name": "Greenview Housing Society",
-      "contract_no": "DCS/2026/001",
+      "contract_no": "DCS/AMC/2026/041",
       "amount": 19250,
       "gst_extra": true,
-      "due_date": "2026-10-14",
+      "due_date": "2026-10-15",
       "status": "overdue",
       "is_extra": false,
       "client_phone": "+919830012345",
       "tenant_id": "das-cooling-services",
-      "source_ref": "invoice-generated",
-      "created_date": "2026-10-05",
+      "source_ref": "I1_greenview.pdf",
+      "created_date": "2026-09-15",
       "created_at": {
-        "_date": "2026-10-05T00:00:00.000Z",
-        "seconds": 1791158400,
+        "_date": "2026-09-15T00:00:00.000Z",
+        "seconds": 1789430400,
         "nanoseconds": 0
       }
     },
-    "DCS-INV-2026-119": {
-      "invoice_no": "DCS/INV/2026/119",
-      "client_name": "Sunrise Office Park",
-      "contract_no": "DCS/2026/002",
-      "amount": 13500,
+    "DCS-INV-2026-131": {
+      "invoice_no": "DCS/INV/2026/131",
+      "client_name": "Park Street Flavours Cafe",
+      "contract_no": "DCS/AMC/2026/063",
+      "amount": 13000,
       "gst_extra": true,
-      "due_date": "2026-11-09",
+      "due_date": "2026-11-10",
       "status": "overdue",
       "is_extra": false,
       "client_phone": "+919831023456",
       "tenant_id": "das-cooling-services",
-      "source_ref": "invoice-generated",
-      "created_date": "2026-10-30",
+      "source_ref": "I2_parkstreet_cafe.pdf",
+      "created_date": "2026-10-27",
       "created_at": {
-        "_date": "2026-10-30T00:00:00.000Z",
-        "seconds": 1793318400,
+        "_date": "2026-10-27T00:00:00.000Z",
+        "seconds": 1793059200,
         "nanoseconds": 0
       }
     },
-    "DCS-INV-2026-120": {
-      "invoice_no": "DCS/INV/2026/120",
-      "client_name": "City Hospital",
-      "contract_no": "DCS/2026/003",
-      "amount": 9000,
+    "DCS-INV-2026-140": {
+      "invoice_no": "DCS/INV/2026/140",
+      "client_name": "New Town IT Office (Brightlane Technologies)",
+      "contract_no": "DCS/AMC/2026/007",
+      "amount": 18000,
       "gst_extra": true,
-      "due_date": "2026-12-04",
+      "due_date": "2026-11-30",
       "status": "pending",
       "is_extra": false,
       "client_phone": "+919832034567",
       "tenant_id": "das-cooling-services",
-      "source_ref": "invoice-generated",
-      "created_date": "2026-11-14",
+      "source_ref": "I3_newtown_office.pdf",
+      "created_date": "2026-11-15",
       "created_at": {
-        "_date": "2026-11-14T00:00:00.000Z",
-        "seconds": 1794614400,
+        "_date": "2026-11-15T00:00:00.000Z",
+        "seconds": 1794700800,
+        "nanoseconds": 0
+      }
+    },
+    "DRAFT-EXTRA-001": {
+      "invoice_no": "DRAFT-EXTRA-001",
+      "client_name": "Greenview Housing Society",
+      "contract_no": "DCS/AMC/2026/041",
+      "description": "Gas top-up (R32) x1 unit",
+      "extra_items": [
+        {
+          "item": "Gas top-up (R32)",
+          "quantity": 1,
+          "unit_price": 1800,
+          "amount": 1800
+        }
+      ],
+      "amount": 1800,
+      "gst_extra": true,
+      "status": "draft",
+      "is_extra": true,
+      "source_ref": "voice-note-V1",
+      "tenant_id": "das-cooling-services",
+      "created_date": "2026-11-19",
+      "created_at": {
+        "_date": "2026-11-19T00:00:00.000Z",
+        "seconds": 1795046400,
+        "nanoseconds": 0
+      }
+    },
+    "DRAFT-EXTRA-002": {
+      "invoice_no": "DRAFT-EXTRA-002",
+      "client_name": "Park Street Flavours Cafe",
+      "contract_no": "DCS/AMC/2026/063",
+      "description": "Filter replacement x1 unit",
+      "extra_items": [
+        {
+          "item": "Filter replacement",
+          "quantity": 1,
+          "unit_price": 450,
+          "amount": 450
+        }
+      ],
+      "amount": 450,
+      "gst_extra": true,
+      "status": "draft",
+      "is_extra": true,
+      "source_ref": "voice-note-V2",
+      "tenant_id": "das-cooling-services",
+      "created_date": "2026-11-19",
+      "created_at": {
+        "_date": "2026-11-19T00:00:00.000Z",
+        "seconds": 1795046400,
         "nanoseconds": 0
       }
     }
-  }
+  },
+  "tenants/das-cooling-services/rate_card": {
+    "gas_top_up_r32": {
+      "id": "gas_top_up_r32",
+      "item": "Gas top-up (R32)",
+      "price": 1800,
+      "unit": "unit"
+    },
+    "filter_replacement": {
+      "id": "filter_replacement",
+      "item": "Filter replacement",
+      "price": 450,
+      "unit": "unit"
+    },
+    "capacitor_replacement": {
+      "id": "capacitor_replacement",
+      "item": "Capacitor replacement",
+      "price": 650,
+      "unit": "unit"
+    },
+    "jet_pump_wash": {
+      "id": "jet_pump_wash",
+      "item": "Jet-pump wash",
+      "price": 600,
+      "unit": "unit"
+    }
+  },
+  "tenants/das-cooling-services/reminders": {},
+  "tenants/das-cooling-services/audit_log": {}
 }
