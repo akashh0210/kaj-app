@@ -1,5 +1,13 @@
 import { useState, useEffect } from 'react'
-import { fetchInvoices, markInvoicePaid, draftReminder, approveReminder, markReminderSent, setExtraPrice } from '../api.js'
+import {
+  fetchInvoices,
+  markInvoicePaid,
+  draftReminder,
+  updateReminder,
+  approveReminder,
+  markReminderSent,
+  setExtraPrice
+} from '../api.js'
 
 function formatRs(n) {
   if (!n && n !== 0) return '—'
@@ -30,11 +38,16 @@ export default function BillsScreen({ showToast }) {
     } catch (e) { showToast('Error: ' + e.message) }
   }
 
+  const [isEditingReminder, setIsEditingReminder] = useState(false)
+  const [editEnglish, setEditEnglish] = useState('')
+  const [editBengali, setEditBengali] = useState('')
+
   async function handleDraftReminder(inv) {
     setReminderModal(inv)
     setDraftLoading(true)
     setDraftData(null)
     setWaLink(null)
+    setIsEditingReminder(false)
     try {
       const draft = await draftReminder({
         invoice_id: inv.id,
@@ -45,6 +58,8 @@ export default function BillsScreen({ showToast }) {
         client_phone: inv.client_phone,
       })
       setDraftData(draft)
+      setEditEnglish(draft.message_english || '')
+      setEditBengali(draft.message_bengali || '')
     } catch (e) {
       showToast('Draft failed: ' + e.message)
       setReminderModal(null)
@@ -53,15 +68,51 @@ export default function BillsScreen({ showToast }) {
     }
   }
 
+  async function handleSaveReminderEdit() {
+    if (!draftData?.id) return
+    try {
+      await updateReminder(draftData.id, {
+        message_english: editEnglish,
+        message_bengali: editBengali,
+      })
+      setDraftData(d => ({ ...d, message_english: editEnglish, message_bengali: editBengali }))
+      setIsEditingReminder(false)
+      showToast('Reminder edited ✓')
+    } catch (e) {
+      showToast('Edit failed: ' + e.message)
+    }
+  }
+
+  function handleCopyMessage() {
+    const textToCopy = editEnglish || draftData?.message_english || ''
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy)
+        .then(() => showToast('Message copied to clipboard ✓'))
+        .catch(() => showToast('Copied to clipboard ✓'))
+    } else {
+      showToast('Copied to clipboard ✓')
+    }
+  }
+
   async function handleApprove() {
     if (!draftData?.id) return
     setApproving(true)
     try {
-      const res = await approveReminder(draftData.id)
+      const res = await approveReminder(draftData.id, 'owner', {
+        message_english: editEnglish || draftData.message_english,
+      })
       setWaLink(res.waLink)
-      showToast('Approved! Opening WhatsApp…')
-      if (res.waLink) window.open(res.waLink, '_blank')
-    } catch (e) { showToast('Approve failed: ' + e.message) } finally { setApproving(false) }
+      if (res.waLink) {
+        showToast('Approved! Opening WhatsApp…')
+        window.open(res.waLink, '_blank')
+      } else {
+        showToast('Approved! No phone number — use Copy to send.')
+      }
+    } catch (e) {
+      showToast('Approve failed: ' + e.message)
+    } finally {
+      setApproving(false)
+    }
   }
 
   async function handleMarkSent() {

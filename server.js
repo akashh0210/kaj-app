@@ -735,9 +735,12 @@ app.post('/api/reminders/draft', async (req, res) => {
     const due = new Date(due_date)
     const days_overdue = Math.max(0, Math.floor((today - due) / 86400000))
 
-    const genAI = geminiClient()
-    const model = genAI.getGenerativeModel({ model: MODEL_PRIMARY })
-    const prompt = `Draft a polite payment reminder message (under 60 words) for:
+    let draft = null
+    if (GEMINI_API_KEY) {
+      try {
+        const genAI = geminiClient()
+        const model = genAI.getGenerativeModel({ model: MODEL_PRIMARY })
+        const prompt = `Draft a polite payment reminder message (under 60 words) for:
 Client: ${client_name}
 Invoice: ${invoice_no}
 Amount: Rs ${amount} (plus GST)
@@ -748,12 +751,19 @@ Rules: polite and short, include client name, invoice number, amount, and origin
 
 Return JSON: { "message_english": "...", "message_bengali": "...", "owner_note": "..." }`
 
-    const result = await model.generateContent(prompt)
-    let draft
-    try {
-      draft = JSON.parse(result.response.text())
-    } catch {
-      draft = { message_english: result.response.text(), message_bengali: '', owner_note: '' }
+        const result = await model.generateContent(prompt)
+        draft = JSON.parse(result.response.text())
+      } catch (e) {
+        console.warn('Gemini reminder draft failed, using rule-based template:', e.message)
+      }
+    }
+
+    if (!draft) {
+      draft = {
+        message_english: `Dear ${client_name}, this is a gentle reminder regarding invoice ${invoice_no} for Rs ${Number(amount).toLocaleString('en-IN')} (due on ${due_date}), which is ${days_overdue} days overdue. Kindly clear the pending payment at your earliest convenience. Thank you, Das Cooling Services.`,
+        message_bengali: `নমস্কার ${client_name}, Das Cooling Services-এর পক্ষ থেকে ${invoice_no} ইনভয়েসের জন্য (টাকা ${Number(amount).toLocaleString('en-IN')}, বকেয়া ${days_overdue} দিন) একটি বিনীত অনুরোধ। অনুগ্রহ করে বকেয়া টাকাটি প্রদান করুন। ধন্যবাদ।`,
+        owner_note: 'Please verify the bank account statement does not already show this payment before sending.',
+      }
     }
 
     const reminderRef = await col(tenantId, 'reminders').add({
@@ -772,7 +782,32 @@ Return JSON: { "message_english": "...", "message_bengali": "...", "owner_note":
       created_at: Timestamp.now(),
     })
 
-    res.json({ id: reminderRef.id, days_overdue, ...draft })
+    res.json({ id: reminderRef.id, days_overdue, client_phone: client_phone || null, ...draft })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Owner edits reminder message before approving
+app.patch('/api/reminders/:id', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req)
+    const { id } = req.params
+    const { message_english, message_bengali, edited_by } = req.body
+
+    const updates = { updated_at: Timestamp.now() }
+    if (message_english !== undefined) updates.message_english = message_english
+    if (message_bengali !== undefined) updates.message_bengali = message_bengali
+
+    await col(tenantId, 'reminders').doc(id).update(updates)
+    await writeAuditLog(tenantId, {
+      action: 'reminder_edited',
+      reminder_id: id,
+      who: edited_by || 'owner',
+      fields_changed: Object.keys(updates).filter(k => k !== 'updated_at'),
+    })
+
+    res.json({ id, ...updates })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
@@ -782,7 +817,7 @@ app.patch('/api/reminders/:id/approve', async (req, res) => {
   try {
     const tenantId = getTenantId(req)
     const { id } = req.params
-    const { approved_by } = req.body
+    const { approved_by, message_english } = req.body
 
     // Check invoice still unpaid (guardrail)
     const rem = await col(tenantId, 'reminders').doc(id).get()
@@ -794,24 +829,27 @@ app.patch('/api/reminders/:id/approve', async (req, res) => {
       return res.status(409).json({ error: 'Invoice already marked paid; reminder cancelled.' })
     }
 
+    const finalMessage = message_english || data.message_english
     await col(tenantId, 'reminders').doc(id).update({
       status: 'approved',
-      approved_by,
+      approved_by: approved_by || 'owner',
       approved_at: Timestamp.now(),
+      message_english: finalMessage,
     })
     await writeAuditLog(tenantId, {
       action: 'reminder_approved',
       reminder_id: id,
-      who: approved_by,
+      who: approved_by || 'owner',
     })
 
-    // Build wa.me link
-    const encoded = encodeURIComponent(data.message_english)
-    const waLink = data.client_phone
+    // Build wa.me link only if client_phone is present
+    const encoded = encodeURIComponent(finalMessage)
+    const hasPhone = Boolean(data.client_phone && data.client_phone.trim())
+    const waLink = hasPhone
       ? `https://wa.me/${data.client_phone.replace(/\D/g, '')}?text=${encoded}`
       : null
 
-    res.json({ id, waLink, message: data.message_english })
+    res.json({ id, waLink, hasPhone, message: finalMessage })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

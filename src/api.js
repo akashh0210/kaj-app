@@ -129,11 +129,19 @@ export async function draftReminder(payload) {
   }))
 }
 
-export async function approveReminder(id, approved_by = 'owner') {
+export async function updateReminder(id, updates) {
+  return handleResponse(await fetch(`/api/reminders/${id}`, {
+    method: 'PATCH',
+    headers: headers(),
+    body: JSON.stringify({ ...updates, edited_by: 'owner' }),
+  }))
+}
+
+export async function approveReminder(id, approved_by = 'owner', extra = {}) {
   return handleResponse(await fetch(`/api/reminders/${id}/approve`, {
     method: 'PATCH',
     headers: headers(),
-    body: JSON.stringify({ approved_by }),
+    body: JSON.stringify({ approved_by, ...extra }),
   }))
 }
 
