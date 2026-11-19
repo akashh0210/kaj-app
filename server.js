@@ -8,22 +8,14 @@ import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import multer from 'multer'
-import { initializeApp, cert } from 'firebase-admin/app'
-import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore'
+import { initDb, getTenantCollection } from './db.js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import fs from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// ── Firebase Admin ───────────────────────────────────────────────────────────
-const firebaseApp = initializeApp({
-  credential: cert({
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  }),
-})
-const db = getFirestore(firebaseApp)
+// ── Database (Firestore on Cloud Run / GCP, or local JSON store fallback) ──────
+const { db, Timestamp } = await initDb()
 
 // ── Gemini ───────────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
@@ -49,7 +41,7 @@ function getTenantId(req) {
 }
 
 function col(tenantId, ...segments) {
-  return db.collection('tenants').doc(tenantId).collection(segments.join('/'))
+  return getTenantCollection(db, tenantId, ...segments)
 }
 
 async function writeAuditLog(tenantId, entry) {

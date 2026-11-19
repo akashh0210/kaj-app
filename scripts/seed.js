@@ -3,22 +3,14 @@
 // Demo data: 1 provider, 5 contracts, 8 visits, 3 invoices (1 overdue 36+ days), 1 renewal in 30 days.
 
 import 'dotenv/config'
-import { initializeApp, cert } from 'firebase-admin/app'
-import { getFirestore, Timestamp } from 'firebase-admin/firestore'
+import { initDb, getTenantCollection } from '../db.js'
 
-const app = initializeApp({
-  credential: cert({
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  }),
-})
-const db = getFirestore(app)
+const { db, Timestamp } = await initDb()
 
 const TENANT_ID = process.env.TENANT_ID || 'das-cooling-services'
 
 function col(...segments) {
-  return db.collection('tenants').doc(TENANT_ID).collection(segments.join('/'))
+  return getTenantCollection(db, TENANT_ID, ...segments)
 }
 
 function ts(dateStr) {
