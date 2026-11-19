@@ -1,0 +1,65 @@
+item,field,correct_value,should_be_flagged
+C1,contract_no,DCS/AMC/2026/041,no
+C1,client_name,Greenview Housing Society,no
+C1,equipment,6 split AC 1.5 ton; 2 window AC 1 ton,no
+C1,start_date,2026-04-01,no
+C1,end_date,2027-03-31,no
+C1,visit_frequency,Quarterly,no
+C1,visit_schedule,2026-04-01; 2026-07-01; 2026-10-01; 2027-01-01,no
+C1,contract_value,38500,no
+C1,gst_extra,true,no
+C1,renewal_reminder_date,2027-03-01,no
+C2,contract_no,DCS/AMC/2026/052,no
+C2,client_name,Ballygunge Dental Clinic,no
+C2,equipment,3 split AC 2 ton,no
+C2,start_date,2026-06-01,yes (only one date given)
+C2,end_date,null,yes (missing)
+C2,visit_frequency,Monthly,no
+C2,contract_value,54000,no
+C2,renewal_reminder_date,null,yes (no end date)
+C3,contract_no,DCS/AMC/2026/063,no
+C3,client_name,Park Street Flavours Cafe,no
+C3,equipment,4 cassette AC 2 ton,no
+C3,start_date,2026-07-01,no
+C3,end_date,2027-06-30,no
+C3,visit_frequency,Half-yearly,no
+C3,visit_schedule,2026-07-01; 2027-01-01,no
+C3,contract_value,26000,no
+C3,renewal_reminder_date,2027-05-31,no
+C4,contract_no,DCS/AMC/2026/007,no
+C4,client_name,New Town IT Office (Brightlane Technologies),no
+C4,equipment,10 split AC 1.5 ton,no
+C4,start_date,2026-01-01,no
+C4,end_date,2026-12-31,no
+C4,visit_frequency,Quarterly,no
+C4,visit_schedule,2026-01-01; 2026-04-01; 2026-07-01; 2026-10-01,no
+C4,contract_value,72000,no
+C4,renewal_reminder_date,2026-12-01,no
+C5,contract_no,DCS/AMC/2026/078,no
+C5,client_name,Behala Nursing Home,no
+C5,equipment,5 split AC 1.5 ton,no
+C5,start_date,2026-09-01,no
+C5,end_date,2027-08-31,no
+C5,visit_frequency,Quarterly,no
+C5,visit_schedule,2026-09-01; 2026-12-01; 2027-03-01; 2027-06-01,no
+C5,renewal_reminder_date,2027-08-01,no
+C5,contract_value,null,yes (missing)
+V1,site_or_client,"Greenview Housing Society, Block C",no
+V1,units_serviced,4 split AC,no
+V1,units_pending,2 split AC,no
+V1,extra_work,"gas top-up x1 (Rs 1,800)",no
+V2,site_or_client,Park Street Flavours Cafe,no
+V2,units_serviced,4 cassette AC,no
+V2,extra_work,filter replacement x1 (Rs 450),no
+V3,site_or_client,New Town IT Office,no
+V3,units_serviced,5 AC,no
+V3,units_pending,null (not stated),yes (unclear)
+V3,extra_work,none; compressor noise noted for next visit,yes (follow-up)
+V4,site_or_client,Ballygunge Dental Clinic,no
+V4,units_serviced,3 split AC,no
+V4,extra_work,none,no
+V5,site_or_client,null,yes (site not named)
+V5,units_serviced,null,yes (not stated)
+I1,days_overdue on 2026-11-20,36,no
+I2,days_overdue on 2026-11-20,10,no
+I3,days_overdue on 2026-11-20,not yet due (10 days left),no
