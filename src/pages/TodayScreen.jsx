@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchDashboard, fetchVisits, fetchContracts } from '../api.js'
+import { fetchDashboard, fetchVisits, fetchContracts, confirmVisit } from '../api.js'
 
 function formatRs(n) {
   if (!n && n !== 0) return '—'
@@ -17,26 +17,37 @@ export default function TodayScreen({ showToast }) {
   const [loading, setLoading] = useState(true)
   const [activeList, setActiveList] = useState(null) // 'visits'|'payments'|'renewals'
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try {
-        const [dash, vis, conts] = await Promise.all([
-          fetchDashboard(),
-          fetchVisits(today()),
-          fetchContracts(),
-        ])
-        setStats(dash)
-        setVisits(vis)
-        setContracts(conts)
-      } catch (e) {
-        showToast('Error loading dashboard: ' + e.message)
-      } finally {
-        setLoading(false)
-      }
+  async function loadData() {
+    setLoading(true)
+    try {
+      const [dash, vis, conts] = await Promise.all([
+        fetchDashboard(),
+        fetchVisits(today()),
+        fetchContracts(),
+      ])
+      setStats(dash)
+      setVisits(vis)
+      setContracts(conts)
+    } catch (e) {
+      showToast('Error loading dashboard: ' + e.message)
+    } finally {
+      setLoading(false)
     }
-    load()
+  }
+
+  useEffect(() => {
+    loadData()
   }, [])
+
+  async function handleConfirmVisit(visitId) {
+    try {
+      await confirmVisit(visitId, { confirmed_by: 'owner' })
+      showToast('Visit confirmed ✓')
+      await loadData()
+    } catch (e) {
+      showToast('Error confirming visit: ' + e.message)
+    }
+  }
 
   if (loading) return (
     <div className="loading-screen">
@@ -45,8 +56,11 @@ export default function TodayScreen({ showToast }) {
     </div>
   )
 
-  // Needs-review items
+  // Needs-review items: flagged contracts + visits pending confirmation
   const needsReview = contracts.filter(c => c.needs_review?.length > 0 && c.status === 'pending_review')
+  const pendingVisits = visits.filter(v => v.status === 'pending_confirmation')
+  const totalReviewItems = needsReview.length + pendingVisits.length
+
   const todayStr = today()
   const in30 = new Date(); in30.setDate(in30.getDate() + 30)
   const in30Str = in30.toISOString().split('T')[0]
@@ -60,15 +74,27 @@ export default function TodayScreen({ showToast }) {
       </div>
 
       {/* Needs review strip */}
-      {needsReview.length > 0 && (
+      {totalReviewItems > 0 && (
         <div className="review-strip">
-          <h3>⚠️ Needs your review ({needsReview.length})</h3>
+          <h3>⚠️ Needs your review ({totalReviewItems})</h3>
           <ul>
             {needsReview.flatMap(c =>
               (c.needs_review || []).map((note, i) => (
                 <li key={c.id + i}><strong>{c.client_name}:</strong> {note}</li>
               ))
             )}
+            {pendingVisits.map(v => (
+              <li key={v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0' }}>
+                <span><strong>{v.client_name}:</strong> Visit update awaiting confirmation</span>
+                <button
+                  className="btn btn-success btn-sm"
+                  style={{ padding: '2px 8px', fontSize: '.75rem' }}
+                  onClick={() => handleConfirmVisit(v.id)}
+                >
+                  ✓ Confirm
+                </button>
+              </li>
+            ))}
           </ul>
         </div>
       )}
@@ -102,7 +128,7 @@ export default function TodayScreen({ showToast }) {
           ) : visits.map(v => (
             <div key={v.id} className={`visit-card ${v.status}`}>
               <div className="card-row">
-                <div>
+                <div style={{ flex: 1 }}>
                   <div className="card-title">{v.client_name}</div>
                   <div className="card-sub">{v.site_address?.split(',')[0]}</div>
                   <div className="card-sub" style={{ marginTop: 2 }}>
@@ -111,6 +137,21 @@ export default function TodayScreen({ showToast }) {
                 </div>
                 <StatusChip status={v.status} />
               </div>
+              {v.status === 'pending_confirmation' && v.pending_update && (
+                <div style={{ marginTop: 8, background: 'var(--accent-light)', padding: 8, borderRadius: 6 }}>
+                  <p style={{ fontSize: '.8rem', color: '#92400e', marginBottom: 6 }}>
+                    <strong>Tech update:</strong> {v.pending_update.summary_english || 'No summary'}
+                  </p>
+                  <button className="btn btn-success btn-sm" onClick={() => handleConfirmVisit(v.id)}>
+                    ✓ Confirm Visit as Done
+                  </button>
+                </div>
+              )}
+              {v.job_summary && v.status === 'done' && (
+                <div style={{ marginTop: 6, fontSize: '.8rem', color: 'var(--gray-600)' }}>
+                  ✓ {v.job_summary}
+                </div>
+              )}
               <div className="source-tag">Tech: {v.technician}</div>
             </div>
           ))}
@@ -145,12 +186,20 @@ export default function TodayScreen({ showToast }) {
           {visits.slice(0, 3).map(v => (
             <div key={v.id} className={`visit-card ${v.status}`}>
               <div className="card-row">
-                <div>
+                <div style={{ flex: 1 }}>
                   <div className="card-title">{v.client_name}</div>
                   <div className="card-sub">{v.units?.map(u => `${u.quantity}× ${u.type}`).join(', ')}</div>
                 </div>
                 <StatusChip status={v.status} />
               </div>
+              {v.status === 'pending_confirmation' && (
+                <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '.75rem', color: '#92400e' }}>Update awaiting confirmation</span>
+                  <button className="btn btn-success btn-sm" style={{ padding: '2px 8px', fontSize: '.75rem' }} onClick={() => handleConfirmVisit(v.id)}>
+                    ✓ Confirm
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -163,6 +212,7 @@ function StatusChip({ status }) {
   const map = {
     done: ['chip chip-green', '✓ Done'],
     scheduled: ['chip chip-blue', '⏳ Scheduled'],
+    pending_confirmation: ['chip chip-amber', '⏳ Pending Review'],
     missed: ['chip chip-red', '✗ Missed'],
     pending_review: ['chip chip-amber', '⚠ Review'],
     confirmed: ['chip chip-green', '✓ Confirmed'],

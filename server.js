@@ -504,25 +504,74 @@ app.get('/api/visits', async (req, res) => {
   }
 })
 
+// Submit technician visit update (creates pending update awaiting owner confirmation)
+app.post('/api/visits/:id/submit-update', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req)
+    const { id } = req.params
+    const updateData = req.body
+
+    const docSnap = await col(tenantId, 'visits').doc(id).get()
+    if (!docSnap.exists) return res.status(404).json({ error: 'Visit not found' })
+
+    await col(tenantId, 'visits').doc(id).update({
+      status: 'pending_confirmation',
+      pending_update: {
+        summary_english: updateData.summary_english || null,
+        units_serviced: updateData.units_serviced || [],
+        units_pending: updateData.units_pending || [],
+        extra_work: updateData.extra_work || [],
+        source_ref: updateData.source_ref || 'voice-note',
+        submitted_by: updateData.submitted_by || 'technician',
+        submitted_at: Timestamp.now(),
+      },
+      updated_at: Timestamp.now(),
+    })
+
+    await writeAuditLog(tenantId, {
+      action: 'visit_update_submitted',
+      visit_id: id,
+      who: updateData.submitted_by || 'technician',
+      source_ref: updateData.source_ref,
+    })
+
+    res.json({ id, status: 'pending_confirmation' })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Owner confirms visit update (visit marked done only by owner)
 app.patch('/api/visits/:id/confirm', async (req, res) => {
   try {
     const tenantId = getTenantId(req)
     const { id } = req.params
-    const { confirmed_by, job_summary } = req.body
+    const { confirmed_by } = req.body
+
+    const docSnap = await col(tenantId, 'visits').doc(id).get()
+    if (!docSnap.exists) return res.status(404).json({ error: 'Visit not found' })
+    const vData = docSnap.data()
+
+    const finalSummary = req.body.job_summary ||
+      vData.pending_update?.summary_english ||
+      vData.job_summary ||
+      'Service visit completed.'
 
     await col(tenantId, 'visits').doc(id).update({
       status: 'done',
-      confirmed_by,
+      confirmed_by: confirmed_by || 'owner',
       confirmed_at: Timestamp.now(),
-      job_summary,
+      job_summary: finalSummary,
       updated_at: Timestamp.now(),
     })
+
     await writeAuditLog(tenantId, {
       action: 'visit_confirmed',
       visit_id: id,
       who: confirmed_by || 'owner',
     })
-    res.json({ id })
+
+    res.json({ id, status: 'done', job_summary: finalSummary })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

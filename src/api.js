@@ -72,7 +72,15 @@ export async function fetchVisits(date) {
   return handleResponse(await fetch(`/api/visits${q}`, { headers: headers() }))
 }
 
-export async function confirmVisit(id, { confirmed_by, job_summary }) {
+export async function submitVisitUpdate(id, updateData) {
+  return handleResponse(await fetch(`/api/visits/${id}/submit-update`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(updateData),
+  }))
+}
+
+export async function confirmVisit(id, { confirmed_by, job_summary } = {}) {
   return handleResponse(await fetch(`/api/visits/${id}/confirm`, {
     method: 'PATCH',
     headers: headers(),

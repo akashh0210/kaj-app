@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchVisits, submitVoiceUpdate, confirmVisit } from '../api.js'
+import { fetchVisits, submitVoiceUpdate, submitVisitUpdate } from '../api.js'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -71,11 +71,15 @@ export default function TechnicianScreen({ showToast }) {
     if (!extracted || !activeVisit) return
     setConfirming(true)
     try {
-      await confirmVisit(activeVisit.id, {
-        confirmed_by: 'technician',
-        job_summary: extracted.summary_english,
+      await submitVisitUpdate(activeVisit.id, {
+        summary_english: extracted.summary_english,
+        units_serviced: extracted.units_serviced,
+        units_pending: extracted.units_pending,
+        extra_work: extracted.extra_work,
+        source_ref: extracted.source_ref,
+        submitted_by: 'technician',
       })
-      showToast('Visit confirmed ✓')
+      showToast('Update submitted for owner review ✓')
       setActiveVisit(null)
       setExtracted(null)
       await load()
@@ -254,6 +258,7 @@ function StatusChip({ status }) {
   const map = {
     done: ['chip chip-green', '✓ Done'],
     scheduled: ['chip chip-blue', '⏳ Scheduled'],
+    pending_confirmation: ['chip chip-amber', '⏳ Pending Review'],
     missed: ['chip chip-red', '✗ Missed'],
   }
   const [cls, label] = map[status] || ['chip chip-gray', status]
