@@ -1,8 +1,17 @@
 # KAJ – Contract-to-Cash Desk for AMC Service Businesses
 
-> Mobile-first PWA · Firestore · Gemini AI · Cloud Run
+> Mobile-first PWA · Gemini on Vertex AI · Cloud Run
 
 **KAJ** is an AI-assisted workflow tool for Air Conditioning and HVAC Annual Maintenance Contract (AMC) service businesses. The promise: *no forms* — people talk, snap or tap; the AI fills the rest; humans only confirm.
+
+## Live demo
+
+**https://kaj-928520890495.asia-south1.run.app**
+
+- Opens as the **Owner**. Tap the role button (top right) to switch to **Technician**.
+- Technician: open a visit, allow the microphone, record a voice note (works on phones; Cloud Run serves HTTPS).
+- Owner: Contracts → **+ Add** → upload a contract photo or PDF (try the files in `demo-data/KAJ_Demo_Data/`).
+- Demo data is seeded on start. Changes you make are kept while the service runs (see [Demo vs production](#demo-vs-production)).
 
 ---
 
@@ -17,36 +26,86 @@ Switch roles with the toggle in the top bar (demo mode, no login).
 
 ---
 
+## AI: Gemini on Vertex AI
+
+| | |
+|---|---|
+| Access | **Vertex AI** (`GEMINI_USE_VERTEX=true`), location `global`, Application Default Credentials. No API key: on Cloud Run the service account has `roles/aiplatform.user`. An API-key mode (`GEMINI_API_KEY`) is still supported. |
+| Main model | **`gemini-4-hydrogen`**: contracts (PDF, photo or text) and voice notes, with structured JSON output (`responseSchema`). |
+| Second model | **`gemini-3.8-flash`**: (1) a second opinion when the main model flags more than 2 fields; the answer with fewer flags is kept; (2) a stand-in when the main model is overloaded or out of quota. |
+| Not used | `gemini-4-carbon` was tested as a stronger second model but returned `403 Access requires an eligible paid billing account in a supported region` on this project. |
+| Code, not AI | Visit schedule, renewal date, days overdue, rupee totals, site-to-visit matching and all validation are computed in code. |
+
+Every contract result carries `extraction_method` (e.g. `gemini:gemini-4-hydrogen`, or `fallback_parser` if Gemini failed)
+and an `extraction_log` explaining any second-model retry, for example
+`gemini-4-hydrogen flagged 3 fields (more than 2); gemini-3.8-flash flagged 2; kept gemini-3.8-flash`.
+The contract screen shows both under a "Read by …" badge.
+
+## Accuracy (live tests, 2026-11-20)
+
+Real Gemini calls, scored against `demo-data/KAJ_Demo_Data/AnswerKey.csv`.
+
+**Contracts**
+
+| File | Read by | Result |
+|------|---------|--------|
+| C1 Greenview (PDF) | gemini-4-hydrogen | **10/10** fields, no flags (as expected) |
+| C2 Ballygunge Dental (PDF) | gemini-4-hydrogen | **8/8**, start date, missing end date and renewal flagged (as expected) |
+| C4 New Town (hand-copied, phone photo) | gemini-4-hydrogen | **9/9** |
+| C5 Behala Nursing Home (PDF, on the live Cloud Run site) | gemini-3.8-flash (second opinion kept) | **10/10**, missing contract value flagged (as expected) |
+
+Before the `visit_frequency` enum was added, C1 scored 9/10 ("Quarterly (4 visits per year)").
+
+**Voice notes**
+
+| Note | Language | Read by | Result |
+|------|----------|---------|--------|
+| V1 Greenview | Bengali | gemini-3.8-flash* | **4/4**: 4 split serviced, 2 pending, gas top-up ×1 |
+| V2 Park Street | Hindi | gemini-3.8-flash* | **3/3**: 4 cassette serviced, filter replacement ×1 |
+| V3 New Town | Mixed | gemini-4-hydrogen | **4/4** values: 5 AC, pending not stated (flagged), compressor noise flagged as follow-up. The scorer first missed "Newtown" vs "New Town"; fixed in the app and the test. |
+| V4 Ballygunge Dental | Hindi | gemini-4-hydrogen | **2/3**: right count (3), no extras; type came back "AC" not "split AC" because the note does not say "split" (flagged, not guessed) |
+| V5 vague note | Bengali | gemini-4-hydrogen | **2/2**: site and units left empty and flagged, nothing guessed |
+
+\* The main model's free-tier daily quota (API-key mode, before the move to Vertex) was used up, so these went to the second model.
+
+**Payments:** days overdue on 2026-11-20 are I1 = 36, I2 = 10, I3 not yet due, all matching the answer key
+(an off-by-one timezone bug was found and fixed during testing).
+
+---
+
 ## Quick Start (Local)
 
 ### 1. Prerequisites
 
 - Node.js 20+
 - Python 3 with `pypdf` (`pip install pypdf`), used to read PDF text for the fallback parser
-- A Gemini API key
-- Optional: a Firebase project with Firestore. Without valid Firebase credentials the server
-  uses a local JSON store at `data/local_db.json` (already seeded), which is enough for a demo.
+- Gemini access, either:
+  - **Vertex AI** (recommended): a Google Cloud project with `aiplatform.googleapis.com` enabled, and
+    `gcloud auth application-default login`; or
+  - a Gemini API key
+- Optional: a Firebase project with Firestore. Without it the server uses a local JSON store
+  at `data/local_db.json` (already seeded).
 
 ### 2. Configure environment
 
 ```bash
 cp .env.example .env
-# Fill in all values in .env
+# Fill in the values in .env
 ```
 
 Key variables:
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_API_KEY` | Your Gemini API key (never logged) |
-| `GEMINI_MODEL` | Main model (default: `gemini-4-hydrogen`) |
-| `GEMINI_USE_VERTEX` | `true` to call Gemini through Vertex AI with Application Default Credentials (no API key). Needs `GOOGLE_CLOUD_PROJECT`; `GOOGLE_CLOUD_LOCATION` defaults to `global`. On Cloud Run the service account needs `roles/aiplatform.user`. |
-| `GEMINI_FALLBACK_MODEL` | Second model, used when the main one is overloaded or out of quota, and for the "too many flags" retry. If unset, those steps are skipped. |
-| `FIREBASE_PROJECT_ID` | Firebase project ID |
-| `FIREBASE_CLIENT_EMAIL` | Service account email |
-| `FIREBASE_PRIVATE_KEY` | Service account private key |
-| `VITE_FIREBASE_API_KEY` | Firebase web API key (browser) |
-| `VITE_FIREBASE_PROJECT_ID` | Same project ID (browser) |
+| `GEMINI_USE_VERTEX` | `true` to use Vertex AI with Application Default Credentials (no API key) |
+| `GOOGLE_CLOUD_PROJECT` | Project for Vertex AI |
+| `GOOGLE_CLOUD_LOCATION` | Vertex AI location (default `global`) |
+| `GEMINI_MODEL` | Main model (default `gemini-4-hydrogen`) |
+| `GEMINI_FALLBACK_MODEL` | Second model (we use `gemini-3.8-flash`). If unset, second opinions and stand-ins are skipped. |
+| `GEMINI_API_KEY` | Only for API-key mode (never logged) |
+| `KAJ_STORE` | `local` forces the local JSON store (used on Cloud Run for the demo) |
+| `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Firestore service account (production) |
+| `VITE_FIREBASE_*` | Firebase web config (browser) |
 | `TENANT_ID` | Tenant slug (default: `das-cooling-services`) |
 
 ### 3. Install and seed
@@ -80,21 +139,21 @@ Or build once and let Express serve everything: `npm run build && node server.js
    stored under a unique name and kept as the record's `source_ref`.
 2. The backend sends the file itself (image or PDF) or the text to `GEMINI_MODEL` with a
    `responseSchema` (structured JSON; `visit_frequency` is an enum: Monthly, Quarterly, Half-yearly, Yearly).
-3. If more than 2 fields are flagged, it retries with `GEMINI_FALLBACK_MODEL` and keeps the result with fewer flags.
+3. If more than 2 fields are flagged, it asks `GEMINI_FALLBACK_MODEL` for a second opinion and keeps the
+   result with fewer flags. The reason is logged and shown on screen.
 4. Transient errors (429/5xx/overload) are retried with backoff; if the main model stays unavailable
-   or its daily quota is used up, the fallback model is tried.
+   or its daily quota is used up, the second model is tried.
 5. Only if Gemini fails completely does a rule-based parser run. It adds
    "AI extraction failed; please check all fields". An upload where nothing could be read is
    marked `extraction_failed` and cannot be saved.
 6. Code normalises the frequency and computes `visit_schedule` and `renewal_reminder_date` (never the AI).
-7. The screen shows which reader was used (badge such as "Read by Gemini 4 Hydrogen"),
-   flagged fields in amber, then the owner taps **Confirm**. Edits are validated, recompute the
-   schedule and renewal date, and are audit-logged.
+7. The screen shows which model read it, flagged fields in amber, then the owner taps **Confirm**.
+   Edits are validated, recompute the schedule and renewal date, and are audit-logged.
 
 ## Voice Note Flow (technician)
 
 1. Technician taps a visit, optionally adds a photo of the unit, and records a voice note
-   (Bengali, Hindi or English). The recorder picks a format the browser supports (webm or mp4 on iPhone).
+   (Bengali, Hindi or English). The recorder picks a format the browser supports (webm, or mp4 on iPhone).
 2. The audio goes straight to Gemini with a `responseSchema`; there is no separate transcription step.
 3. Code checks the result: the site named must match the visit that was tapped, quantities must be
    whole numbers, and missing site or unit counts are flagged. Vague notes come back flagged, not guessed.
@@ -128,12 +187,12 @@ Or build once and let Express serve everything: `npm run build && node server.js
 |---------|----------------|
 | `NODE_ENV=test node tests/test_step6_live.js` | **Live Gemini** contract extraction of C1 and C2 through the real upload route, scored against `AnswerKey.csv`; also checks upload names are unique |
 | `NODE_ENV=test node tests/test_step6_live.js "demo-data/KAJ_Demo_Data/C4_photo.jpeg=C4"` | Same, plus a contract photo (hand-copied C4 contract, photographed) |
-| `NODE_ENV=test node tests/test_voice_live.js` | **Live Gemini** voice extraction of `v1.ogg`–`v5.ogg`, scored against the V rows of `AnswerKey.csv` |
+| `NODE_ENV=test node tests/test_voice_live.js [V1 V2 …]` | **Live Gemini** voice extraction of `v1.ogg`–`v5.ogg` (or the ones named), scored against the V rows of `AnswerKey.csv` |
 | `node tests/test_step3.js`, `test_step4.js`, `test_step5.js` | Earlier step tests (extraction, visit confirmation, rate-card billing) |
 
-The live tests make real API calls. On the free tier `gemini-4-hydrogen` allows **20 requests per day**,
-so a full run of both live tests uses about half of it. They print `extraction_method` for every file, so you can
-see whether Gemini or the fallback parser answered.
+The live tests make real Gemini calls (Vertex AI or API key, whichever `.env` selects) and print
+`extraction_method` for every file, so you can see which model, or the fallback parser, answered.
+In API-key mode on the free tier, `gemini-4-hydrogen` allows only 20 requests per day.
 
 ## Accessibility and language
 
@@ -148,38 +207,34 @@ see whether Gemini or the fallback parser answered.
 
 ## Deploy to Cloud Run
 
-### Prerequisites
-
-- `gcloud` CLI installed and authenticated
-- Docker (or Cloud Build)
+The live demo runs as Cloud Run service `kaj` in `asia-south1`, built from source with the `Dockerfile`.
 
 ```bash
-# Option A: Use the deploy script
-chmod +x deploy.sh
 ./deploy.sh YOUR_PROJECT_ID asia-south1
-
-# Option B: Manual
-gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/kaj-app .
-gcloud run deploy kaj-app \
-  --image gcr.io/YOUR_PROJECT_ID/kaj-app \
-  --region asia-south1 \
-  --allow-unauthenticated \
-  --port 8080 \
-  --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest,...
 ```
 
-> Store secrets in **Google Secret Manager** and reference them with `--set-secrets`.
+`deploy.sh` runs `gcloud run deploy kaj --source .` with Vertex mode (`GEMINI_USE_VERTEX=true`,
+`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`), the two models, `KAJ_STORE=local`,
+`--min-instances 1 --max-instances 1 --memory 512Mi --allow-unauthenticated`. Env vars go through a temporary
+file that is deleted afterwards; no API key or secret is sent.
 
-With Vertex mode no API key is needed on Cloud Run. Set `GEMINI_USE_VERTEX=true`, `GOOGLE_CLOUD_PROJECT`,
-`GOOGLE_CLOUD_LOCATION` and `KAJ_STORE=local` (demo without Firestore; the container seeds demo data on start,
-and data lives in memory until the instance restarts). For `--source` deploys the Cloud Run service account also
-needs `roles/run.builder` in new projects.
+One-time project setup:
+- Enable Cloud Run, Cloud Build, Artifact Registry and Vertex AI (`aiplatform.googleapis.com`).
+- Grant the Cloud Run service account (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`)
+  `roles/aiplatform.user` (call Gemini) and `roles/run.builder` (source builds in new projects).
 
-### After deploy
+On start the container runs `scripts/seed-if-empty.js` (seeds demo data into an empty local store),
+then the server.
 
-1. Set the `VITE_FIREBASE_*` env vars in `.env` and rebuild (`npm run build`).
-2. Run `npm run seed` to populate Firestore.
-3. The Cloud Run URL is printed at the end of `deploy.sh`.
+### Demo vs production
+
+| | Demo (live URL) | Production (planned) |
+|---|---|---|
+| Data store | **In-memory** local JSON store inside the one Cloud Run instance (`KAJ_STORE=local`) | **Firestore**, scoped by `tenant_id` (already supported by `db.js`) |
+| Persistence | Kept while the instance runs (`--min-instances 1` stops it scaling to zero). Lost on redeploy or restart, then re-seeded. | Durable |
+| Uploaded files | Instance memory | Cloud Storage |
+| Scaling | Exactly one instance (`--max-instances 1`) so everyone sees the same data | Many instances share Firestore |
+| Login | Role toggle, no auth | Firebase Auth per business |
 
 ---
 
@@ -202,33 +257,34 @@ kaj-app/
 │   └── index.css                 # Mobile-first styles
 ├── scripts/
 │   ├── seed.js                   # Demo data seeder (Firestore or local store)
+│   ├── seed-if-empty.js          # Container start: seed an empty local store
 │   └── extract_pdf.py            # PDF text for the fallback parser
 ├── tests/                        # Step tests + live Gemini tests
-├── demo-data/KAJ_Demo_Data/      # Contracts, invoices, voice notes, AnswerKey.csv
+├── demo-data/KAJ_Demo_Data/      # Contracts, invoices, C4 photo, voice notes, AnswerKey.csv
 ├── data/local_db.json            # Local store used when Firestore is not configured
 ├── uploads/                      # Uploaded files (git-ignored)
-├── server.js                     # Express API + Gemini integration
+├── server.js                     # Express API + Gemini integration (Vertex AI or API key)
 ├── db.js                         # Firestore or local JSON store
 ├── Dockerfile                    # Multi-stage Docker build
-├── deploy.sh                     # Cloud Run deploy script
+├── deploy.sh                     # Cloud Run deploy (Vertex, demo settings)
+├── .gcloudignore                 # Keeps .env and local data out of uploads
 └── .env.example                  # Environment variable template
 ```
 
 ---
 
-## Demo Data (seeded by `npm run seed`)
+## Demo Data (seeded on start / by `npm run seed`)
 
 - **Provider:** Das Cooling Services
-- **3 Contracts:** Greenview Housing Society (C1, quarterly), Ballygunge Dental Clinic (C2, monthly,
-  flagged: only one date, no end date), Park Street Flavours Cafe (C3, half-yearly)
+- **4 Contracts:** Greenview Housing Society (C1, quarterly), Ballygunge Dental Clinic (C2, monthly,
+  flagged: only one date, no end date), Park Street Flavours Cafe (C3, half-yearly),
+  New Town IT Office (C4, quarterly, **renewal reminder 2026-12-01**, so "Renewals in 30 days" has data)
 - **7 Visits:** two dated the day the seed runs, plus past (done) and upcoming visits
 - **3 Invoices:** Greenview 36 days overdue, Park Street 10 days overdue, New Town not yet due (on 2026-11-20)
 - **2 Unbilled extras:** gas top-up (Rs 1,800) and filter replacement (Rs 450) from voice notes
 
-Not yet covered by the seed (the app-screens skill asks for both):
-- **No renewal within 30 days.** C4 (New Town, renewal 2026-12-01) would cover it but is not seeded;
-  add it from the photo or `C4_newtown_office_COPY_BY_HAND.pdf` through the Contracts screen.
-- **5 contracts / 8 visits** in the skill vs 3 / 7 seeded.
+C5 (Behala Nursing Home) is left out on purpose so it can be uploaded live. The app-screens skill
+asks for 5 contracts and 8 visits; the seed has 4 and 7.
 
 ---
 
