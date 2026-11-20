@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
 import { fetchDigest } from '../api.js'
+import LoadError from '../components/LoadError.jsx'
 
 export default function DigestScreen({ showToast }) {
   const [digest, setDigest] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try { setDigest(await fetchDigest()) } catch (e) { showToast('Error: ' + e.message) } finally { setLoading(false) }
-    }
-    load()
-  }, [])
+  async function load() {
+    setLoading(true)
+    setLoadError(null)
+    try { setDigest(await fetchDigest()) } catch (e) { setLoadError(e.message) } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
 
   function handleWhatsApp() {
     if (!digest?.digest) return
@@ -20,6 +22,7 @@ export default function DigestScreen({ showToast }) {
   }
 
   if (loading) return <div className="loading-screen"><div className="spinner" /><p>Loading digest…</p></div>
+  if (loadError) return <LoadError message={loadError} onRetry={load} />
 
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -65,7 +68,7 @@ export default function DigestScreen({ showToast }) {
             </pre>
           </div>
 
-          <button className="btn btn-success btn-full" style={{ marginTop: 8 }} onClick={handleWhatsApp}>
+          <button className="btn btn-success btn-full" style={{ marginTop: 8 }} disabled={!digest.digest} onClick={handleWhatsApp}>
             📱 Share Digest on WhatsApp
           </button>
           <p style={{ fontSize: '.72rem', color: 'var(--gray-400)', textAlign: 'center', marginTop: 6 }}>

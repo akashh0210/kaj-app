@@ -12,9 +12,33 @@ function headers(extra = {}) {
 }
 
 async function handleResponse(res) {
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  let data = null
+  try {
+    data = await res.json()
+  } catch {
+    // Non-JSON body (proxy error page, server restart, etc.)
+  }
+  if (!res.ok || data === null) {
+    const err = new Error(data?.error || (res.status >= 500
+      ? 'The server had a problem. Please try again.'
+      : `Request failed (${res.status}).`))
+    err.status = res.status
+    err.retryable = Boolean(data?.retryable) || res.status === 503 || res.status === 429
+    throw err
+  }
   return data
+}
+
+// Turn "Failed to fetch" into a message people can act on.
+const rawFetch = window.fetch.bind(window)
+async function fetch(url, opts) {
+  try {
+    return await rawFetch(url, opts)
+  } catch {
+    const err = new Error("Can't reach the KAJ server. Check your connection and try again.")
+    err.retryable = true
+    throw err
+  }
 }
 
 // --- Dashboard ---
@@ -88,9 +112,11 @@ export async function confirmVisit(id, { confirmed_by, job_summary } = {}) {
   }))
 }
 
-export async function submitVoiceUpdate(visitId, audioBlob) {
+export async function submitVoiceUpdate(visitId, audioBlob, photoFile = null) {
   const form = new FormData()
-  form.append('audio', audioBlob, 'recording.webm')
+  const ext = (audioBlob.type.split('/')[1] || 'webm').split(';')[0]
+  form.append('audio', audioBlob, `recording.${ext}`)
+  if (photoFile) form.append('photo', photoFile, photoFile.name || 'unit-photo.jpg')
   const res = await fetch(`/api/visits/${visitId}/voice-update`, {
     method: 'POST',
     headers: { 'x-tenant-id': TENANT_ID },

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { fetchDashboard, fetchVisits, fetchContracts, confirmVisit } from '../api.js'
+import LoadError from '../components/LoadError.jsx'
 
 function formatRs(n) {
   if (!n && n !== 0) return '—'
@@ -10,15 +11,18 @@ function today() {
   return new Date().toISOString().split('T')[0]
 }
 
-export default function TodayScreen({ showToast }) {
+export default function TodayScreen({ showToast, onNavigate }) {
   const [stats, setStats] = useState(null)
   const [visits, setVisits] = useState([])
   const [contracts, setContracts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeList, setActiveList] = useState(null) // 'visits'|'payments'|'renewals'
+  const [loadError, setLoadError] = useState(null)
+  const [confirmingId, setConfirmingId] = useState(null)
+  const [activeList, setActiveList] = useState(null) // 'visits'|'renewals'
 
   async function loadData() {
     setLoading(true)
+    setLoadError(null)
     try {
       const [dash, vis, conts] = await Promise.all([
         fetchDashboard(),
@@ -29,7 +33,7 @@ export default function TodayScreen({ showToast }) {
       setVisits(vis)
       setContracts(conts)
     } catch (e) {
-      showToast('Error loading dashboard: ' + e.message)
+      setLoadError(e.message)
     } finally {
       setLoading(false)
     }
@@ -40,12 +44,16 @@ export default function TodayScreen({ showToast }) {
   }, [])
 
   async function handleConfirmVisit(visitId) {
+    if (confirmingId) return
+    setConfirmingId(visitId)
     try {
       await confirmVisit(visitId, { confirmed_by: 'owner' })
       showToast('Visit confirmed ✓')
       await loadData()
     } catch (e) {
       showToast('Error confirming visit: ' + e.message)
+    } finally {
+      setConfirmingId(null)
     }
   }
 
@@ -55,6 +63,8 @@ export default function TodayScreen({ showToast }) {
       <p>Loading dashboard…</p>
     </div>
   )
+
+  if (loadError) return <LoadError message={loadError} onRetry={loadData} />
 
   // Needs-review items: flagged contracts + visits pending confirmation
   const needsReview = contracts.filter(c => c.needs_review?.length > 0 && c.status === 'pending_review')
@@ -89,7 +99,7 @@ export default function TodayScreen({ showToast }) {
                 <button
                   className="btn btn-success btn-sm"
                   style={{ padding: '2px 8px', fontSize: '.75rem' }}
-                  onClick={() => handleConfirmVisit(v.id)}
+                  disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}
                 >
                   ✓ Confirm
                 </button>
@@ -105,11 +115,11 @@ export default function TodayScreen({ showToast }) {
           <div className="stat-value">{stats?.visits_today ?? 0}</div>
           <div className="stat-label">Visits today</div>
         </div>
-        <div className="stat-card warning" onClick={() => setActiveList(activeList === 'extras' ? null : 'extras')}>
+        <div className="stat-card warning" onClick={() => onNavigate?.('bills')}>
           <div className="stat-value">{stats?.unbilled_extras ?? 0}</div>
           <div className="stat-label">Unbilled extras</div>
         </div>
-        <div className="stat-card danger" onClick={() => setActiveList(activeList === 'payments' ? null : 'payments')}>
+        <div className="stat-card danger" onClick={() => onNavigate?.('bills')}>
           <div className="stat-value">{formatRs(stats?.overdue_total)}</div>
           <div className="stat-label">Overdue payments</div>
         </div>
@@ -142,7 +152,7 @@ export default function TodayScreen({ showToast }) {
                   <p style={{ fontSize: '.8rem', color: '#92400e', marginBottom: 6 }}>
                     <strong>Tech update:</strong> {v.pending_update.summary_english || 'No summary'}
                   </p>
-                  <button className="btn btn-success btn-sm" onClick={() => handleConfirmVisit(v.id)}>
+                  <button className="btn btn-success btn-sm" disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}>
                     ✓ Confirm Visit as Done
                   </button>
                 </div>
@@ -195,7 +205,7 @@ export default function TodayScreen({ showToast }) {
               {v.status === 'pending_confirmation' && (
                 <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '.75rem', color: '#92400e' }}>Update awaiting confirmation</span>
-                  <button className="btn btn-success btn-sm" style={{ padding: '2px 8px', fontSize: '.75rem' }} onClick={() => handleConfirmVisit(v.id)}>
+                  <button className="btn btn-success btn-sm" style={{ padding: '2px 8px', fontSize: '.75rem' }} disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}>
                     ✓ Confirm
                   </button>
                 </div>

@@ -1,45 +1,76 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchVisits, submitVoiceUpdate, submitVisitUpdate } from '../api.js'
+import LoadError from '../components/LoadError.jsx'
 
 function today() {
   return new Date().toISOString().split('T')[0]
 }
 
+// Safari/iOS cannot record webm; pick the first format this browser supports.
+function pickAudioMime() {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return ''
+  return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
+    .find(t => MediaRecorder.isTypeSupported(t)) || ''
+}
+
 export default function TechnicianScreen({ showToast }) {
   const [visits, setVisits] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [activeVisit, setActiveVisit] = useState(null)
   const [recording, setRecording] = useState(false)
   const [mediaRecorder, setMediaRecorder] = useState(null)
-  const [audioChunks, setAudioChunks] = useState([])
   const [extracted, setExtracted] = useState(null)
   const [processing, setProcessing] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [photo, setPhoto] = useState(null)
+  const [failedBlob, setFailedBlob] = useState(null) // recording kept after a failed upload
   const chunksRef = useRef([])
+  const discardRef = useRef(false) // set when leaving a visit mid-recording
+  const photoInputRef = useRef()
 
   async function load() {
     setLoading(true)
-    try { setVisits(await fetchVisits(today())) } catch (e) { showToast('Error: ' + e.message) } finally { setLoading(false) }
+    setLoadError(null)
+    try { setVisits(await fetchVisits(today())) } catch (e) { setLoadError(e.message) } finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
 
   async function startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      return showToast('This browser cannot record audio. Please open KAJ in Chrome or Safari.')
+    }
+    let stream
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (e) {
+      return showToast(e.name === 'NotAllowedError'
+        ? 'Microphone permission denied. Allow the microphone in your browser settings.'
+        : 'Could not start the microphone: ' + e.message)
+    }
+    try {
+      const mime = pickAudioMime()
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
       chunksRef.current = []
+      discardRef.current = false
       mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        if (discardRef.current) return
+        const blob = new Blob(chunksRef.current, { type: (mr.mimeType || 'audio/webm').split(';')[0] })
+        if (blob.size === 0) {
+          setProcessing(false)
+          return showToast('Nothing was recorded. Please try again.')
+        }
         await processAudio(blob)
       }
       mr.start()
       setMediaRecorder(mr)
       setRecording(true)
     } catch (e) {
-      showToast('Microphone access denied: ' + e.message)
+      stream.getTracks().forEach(t => t.stop())
+      showToast('Recording failed to start: ' + e.message)
     }
   }
 
@@ -52,11 +83,14 @@ export default function TechnicianScreen({ showToast }) {
   }
 
   async function processAudio(blob) {
+    setProcessing(true)
+    setFailedBlob(null)
     try {
-      const { extracted: data } = await submitVoiceUpdate(activeVisit.id, blob)
+      const { extracted: data } = await submitVoiceUpdate(activeVisit.id, blob, photo)
       setExtracted(data)
     } catch (e) {
-      showToast('Processing failed: ' + e.message)
+      showToast('Processing failed: ' + e.message, 4000)
+      setFailedBlob(blob) // keep the recording so the technician can retry without re-recording
     } finally {
       setProcessing(false)
     }
@@ -64,7 +98,29 @@ export default function TechnicianScreen({ showToast }) {
 
   function handleReRecord() {
     setExtracted(null)
+    setFailedBlob(null)
     setProcessing(false)
+  }
+
+  function leaveVisit() {
+    if (recording && mediaRecorder) {
+      discardRef.current = true
+      mediaRecorder.stop()
+      setRecording(false)
+    }
+    setActiveVisit(null)
+    setExtracted(null)
+    setFailedBlob(null)
+    setPhoto(null)
+  }
+
+  function handlePhoto(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow picking the same file again
+    if (!file) return
+    if (!file.type.startsWith('image/')) return showToast('Please choose a photo.')
+    setPhoto(file)
+    showToast('Photo attached ✓')
   }
 
   async function handleConfirm() {
@@ -76,12 +132,13 @@ export default function TechnicianScreen({ showToast }) {
         units_serviced: extracted.units_serviced,
         units_pending: extracted.units_pending,
         extra_work: extracted.extra_work,
+        needs_review: extracted.needs_review,
         source_ref: extracted.source_ref,
+        photo_ref: extracted.photo_ref,
         submitted_by: 'technician',
       })
       showToast('Update submitted for owner review ✓')
-      setActiveVisit(null)
-      setExtracted(null)
+      leaveVisit()
       await load()
     } catch (e) {
       showToast('Error: ' + e.message)
@@ -98,7 +155,7 @@ export default function TechnicianScreen({ showToast }) {
         {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
       </p>
 
-      {loading ? <div className="spinner" /> : (
+      {loading ? <div className="spinner" /> : loadError ? <LoadError message={loadError} onRetry={load} /> : (
         visits.length === 0
           ? <div className="empty-state"><p>No visits today.</p></div>
           : visits.map(v => (
@@ -138,14 +195,24 @@ export default function TechnicianScreen({ showToast }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <button className="btn btn-outline btn-sm" onClick={() => { setActiveVisit(null); setExtracted(null) }}>← Back</button>
+        <button className="btn btn-outline btn-sm" onClick={leaveVisit}>← Back</button>
         <div>
           <div className="card-title">{activeVisit.client_name}</div>
           <div className="card-sub">{activeVisit.site_address?.split(',')[0]}</div>
         </div>
       </div>
 
-      {!processing && !extracted && (
+      {failedBlob && !processing && !extracted && (
+        <div className="error-state" role="alert">
+          <p>The voice note could not be processed. Your recording is saved.</p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => processAudio(failedBlob)}>Try again</button>
+            <button className="btn btn-outline btn-sm" onClick={handleReRecord}>Re-record</button>
+          </div>
+        </div>
+      )}
+
+      {!processing && !extracted && !failedBlob && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 32, gap: 24 }}>
           <p style={{ color: 'var(--gray-500)', fontSize: '.9rem', textAlign: 'center' }}>
             {recording ? 'Recording… tap again to stop' : 'Tap the mic button to record your update'}
@@ -165,10 +232,17 @@ export default function TechnicianScreen({ showToast }) {
             </div>
           )}
 
-          <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={() => document.getElementById('photoInput')?.click()}>
-            📷 Add Photo
-          </button>
-          <input id="photoInput" type="file" accept="image/*" capture="environment" style={{ display: 'none' }} />
+          {photo ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '.85rem' }}>
+              <span className="chip chip-green">📷 {photo.name || 'Photo'} attached</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPhoto(null)}>Remove</button>
+            </div>
+          ) : (
+            <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} disabled={recording} onClick={() => photoInputRef.current?.click()}>
+              📷 Add Photo
+            </button>
+          )}
+          <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhoto} />
         </div>
       )}
 

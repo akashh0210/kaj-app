@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import TodayScreen from './pages/TodayScreen.jsx'
 import ContractsScreen from './pages/ContractsScreen.jsx'
 import BillsScreen from './pages/BillsScreen.jsx'
@@ -33,9 +33,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('today')
   const [toast, setToast] = useState(null)
 
+  const toastTimer = useRef(null)
   function showToast(msg, duration = 2500) {
     setToast(msg)
-    setTimeout(() => setToast(null), duration)
+    clearTimeout(toastTimer.current) // a newer toast must not be cleared by an older timer
+    toastTimer.current = setTimeout(() => setToast(null), duration)
   }
 
   function toggleRole() {
@@ -43,7 +45,7 @@ export default function App() {
     setActiveTab('today')
   }
 
-  const sharedProps = { showToast }
+  const sharedProps = { showToast, onNavigate: setActiveTab }
 
   return (
     <div className="page">
@@ -86,7 +88,7 @@ export default function App() {
         </nav>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
     </div>
   )
 }

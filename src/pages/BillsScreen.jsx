@@ -8,6 +8,7 @@ import {
   markReminderSent,
   setExtraPrice
 } from '../api.js'
+import LoadError from '../components/LoadError.jsx'
 
 function formatRs(n) {
   if (!n && n !== 0) return '—'
@@ -21,21 +22,36 @@ export default function BillsScreen({ showToast }) {
   const [draftData, setDraftData] = useState(null)
   const [draftLoading, setDraftLoading] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [approved, setApproved] = useState(false)
   const [waLink, setWaLink] = useState(null)
+  const [loadError, setLoadError] = useState(null)
+  const [busyId, setBusyId] = useState(null) // invoice currently being marked paid / priced
+  const [sending, setSending] = useState(false)
 
   async function load() {
     setLoading(true)
-    try { setInvoices(await fetchInvoices()) } catch (e) { showToast('Error: ' + e.message) } finally { setLoading(false) }
+    setLoadError(null)
+    try { setInvoices(await fetchInvoices()) } catch (e) { setLoadError(e.message) } finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
 
   async function handleMarkPaid(inv) {
+    if (busyId) return
+    setBusyId(inv.id)
     try {
       await markInvoicePaid(inv.id)
       showToast('Marked as paid ✓')
       await load()
-    } catch (e) { showToast('Error: ' + e.message) }
+    } catch (e) { showToast('Error: ' + e.message) } finally { setBusyId(null) }
+  }
+
+  function closeReminder() {
+    setReminderModal(null)
+    setDraftData(null)
+    setWaLink(null)
+    setApproved(false)
+    setIsEditingReminder(false)
   }
 
   const [isEditingReminder, setIsEditingReminder] = useState(false)
@@ -47,6 +63,7 @@ export default function BillsScreen({ showToast }) {
     setDraftLoading(true)
     setDraftData(null)
     setWaLink(null)
+    setApproved(false)
     setIsEditingReminder(false)
     try {
       const draft = await draftReminder({
@@ -83,14 +100,13 @@ export default function BillsScreen({ showToast }) {
     }
   }
 
-  function handleCopyMessage() {
-    const textToCopy = editEnglish || draftData?.message_english || ''
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(textToCopy)
-        .then(() => showToast('Message copied to clipboard ✓'))
-        .catch(() => showToast('Copied to clipboard ✓'))
-    } else {
-      showToast('Copied to clipboard ✓')
+  async function handleCopyMessage(text) {
+    const textToCopy = text ?? (editEnglish || draftData?.message_english || '')
+    try {
+      await navigator.clipboard.writeText(textToCopy)
+      showToast('Message copied ✓')
+    } catch {
+      showToast('Could not copy automatically. Press and hold the message to copy it.', 4000)
     }
   }
 
@@ -102,6 +118,7 @@ export default function BillsScreen({ showToast }) {
         message_english: editEnglish || draftData.message_english,
       })
       setWaLink(res.waLink)
+      setApproved(true)
       if (res.waLink) {
         showToast('Approved! Opening WhatsApp…')
         window.open(res.waLink, '_blank')
@@ -116,19 +133,27 @@ export default function BillsScreen({ showToast }) {
   }
 
   async function handleMarkSent() {
-    if (!draftData?.id) return
-    await markReminderSent(draftData.id)
-    showToast('Marked as sent ✓')
-    setReminderModal(null)
-    setDraftData(null)
-    await load()
+    if (!draftData?.id || sending) return
+    setSending(true)
+    try {
+      await markReminderSent(draftData.id)
+      showToast('Marked as sent ✓')
+      closeReminder()
+      await load()
+    } catch (e) {
+      showToast('Could not mark as sent: ' + e.message)
+    } finally {
+      setSending(false)
+    }
   }
 
   const [pricingId, setPricingId] = useState(null)
   const [customPrice, setCustomPrice] = useState('')
 
   async function handleSavePrice(invId) {
-    if (!customPrice || isNaN(customPrice)) return showToast('Enter a valid price')
+    if (!customPrice || isNaN(customPrice) || Number(customPrice) <= 0) return showToast('Enter a valid price')
+    if (busyId) return
+    setBusyId(invId)
     try {
       await setExtraPrice(invId, { unit_price: Number(customPrice), quantity: 1 })
       showToast('Price set ✓')
@@ -137,6 +162,8 @@ export default function BillsScreen({ showToast }) {
       await load()
     } catch (e) {
       showToast('Error: ' + e.message)
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -150,7 +177,7 @@ export default function BillsScreen({ showToast }) {
     <div>
       <h2 style={{ marginBottom: 16 }}>Bills &amp; Payments</h2>
 
-      {loading ? <div className="spinner" /> : (
+      {loading ? <div className="spinner" /> : loadError ? <LoadError message={loadError} onRetry={load} /> : (
         <>
           {/* Unbilled Extras (Bill lines from voice notes) */}
           {unbilledExtras.length > 0 && (
@@ -194,7 +221,7 @@ export default function BillsScreen({ showToast }) {
                             value={customPrice}
                             onChange={e => setCustomPrice(e.target.value)}
                           />
-                          <button className="btn btn-success btn-sm" onClick={() => handleSavePrice(extra.id)}>Save</button>
+                          <button className="btn btn-success btn-sm" disabled={busyId === extra.id} onClick={() => handleSavePrice(extra.id)}>{busyId === extra.id ? "Saving…" : "Save"}</button>
                           <button className="btn btn-outline btn-sm" onClick={() => { setPricingId(null); setCustomPrice('') }}>Cancel</button>
                         </>
                       ) : (
@@ -216,14 +243,14 @@ export default function BillsScreen({ showToast }) {
               <div className="section-header">
                 <h2 style={{ color: 'var(--danger)' }}>⚠ Overdue Invoices ({overdue.length})</h2>
               </div>
-              {overdue.map(inv => <InvoiceCard key={inv.id} inv={inv} onReminder={() => handleDraftReminder(inv)} onMarkPaid={() => handleMarkPaid(inv)} />)}
+              {overdue.map(inv => <InvoiceCard key={inv.id} inv={inv} onReminder={() => handleDraftReminder(inv)} onMarkPaid={() => handleMarkPaid(inv)} busy={busyId === inv.id} />)}
             </>
           )}
 
           {upcoming.length > 0 && (
             <>
               <div className="section-header" style={{ marginTop: 8 }}><h2>Upcoming Invoices</h2></div>
-              {upcoming.map(inv => <InvoiceCard key={inv.id} inv={inv} onMarkPaid={() => handleMarkPaid(inv)} />)}
+              {upcoming.map(inv => <InvoiceCard key={inv.id} inv={inv} onMarkPaid={() => handleMarkPaid(inv)} busy={busyId === inv.id} />)}
             </>
           )}
 
@@ -240,7 +267,7 @@ export default function BillsScreen({ showToast }) {
 
       {/* Reminder modal */}
       {reminderModal && (
-        <div className="modal-overlay" onClick={() => { setReminderModal(null); setDraftData(null) }}>
+        <div className="modal-overlay" onClick={() => { if (!approving && !sending) closeReminder() }}>
           <div className="modal-sheet" onClick={e => e.stopPropagation()}>
             <div className="modal-handle" />
             <h3 style={{ marginBottom: 4 }}>Payment Reminder</h3>
@@ -257,20 +284,45 @@ export default function BillsScreen({ showToast }) {
                   </div>
                 )}
 
-                <div style={{ marginBottom: 12 }}>
-                  <label className="label">English message</label>
-                  <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: 10, fontSize: '.85rem', color: 'var(--gray-800)', lineHeight: 1.5 }}>
-                    {draftData.message_english}
-                  </div>
-                </div>
-
-                {draftData.message_bengali && (
+                {isEditingReminder ? (
                   <div style={{ marginBottom: 12 }}>
-                    <label className="label">Bengali message</label>
-                    <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: 10, fontSize: '.85rem', color: 'var(--gray-800)', lineHeight: 1.5 }}>
-                      {draftData.message_bengali}
+                    <label className="label" htmlFor="rem-en">English message</label>
+                    <textarea id="rem-en" className="input" rows={4} value={editEnglish} onChange={e => setEditEnglish(e.target.value)} />
+                    <label className="label" htmlFor="rem-bn" style={{ marginTop: 8 }}>Bengali message</label>
+                    <textarea id="rem-bn" className="input" rows={4} lang="bn" value={editBengali} onChange={e => setEditBengali(e.target.value)} />
+                    <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                      <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={() => {
+                        setEditEnglish(draftData.message_english || ''); setEditBengali(draftData.message_bengali || ''); setIsEditingReminder(false)
+                      }}>Cancel</button>
+                      <button className="btn btn-primary btn-sm" style={{ flex: 2 }} disabled={!editEnglish.trim()} onClick={handleSaveReminderEdit}>Save changes</button>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: 12 }}>
+                      <label className="label">English message</label>
+                      <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: 10, fontSize: '.85rem', color: 'var(--gray-800)', lineHeight: 1.5, userSelect: 'text' }}>
+                        {draftData.message_english}
+                      </div>
+                    </div>
+
+                    {draftData.message_bengali && (
+                      <div style={{ marginBottom: 12 }}>
+                        <label className="label">Bengali message</label>
+                        <div lang="bn" style={{ background: 'var(--gray-50)', borderRadius: 8, padding: 10, fontSize: '.85rem', color: 'var(--gray-800)', lineHeight: 1.5, userSelect: 'text' }}>
+                          {draftData.message_bengali}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                      {!approved && <button className="btn btn-outline btn-sm" onClick={() => setIsEditingReminder(true)}>✏ Edit</button>}
+                      <button className="btn btn-outline btn-sm" onClick={() => handleCopyMessage(draftData.message_english)}>Copy English</button>
+                      {draftData.message_bengali && (
+                        <button className="btn btn-outline btn-sm" onClick={() => handleCopyMessage(draftData.message_bengali)}>Copy Bengali</button>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 <p style={{ fontSize: '.75rem', color: 'var(--gray-500)', marginBottom: 12 }}>
@@ -282,19 +334,25 @@ export default function BillsScreen({ showToast }) {
                   <p style={{ fontSize: '.75rem', color: '#78350f' }}>⏰ Please send only between 09:00 and 20:00 IST.</p>
                 </div>
 
-                {!waLink ? (
+                {!approved ? (
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setReminderModal(null); setDraftData(null) }}>Cancel</button>
-                    <button className="btn btn-success" style={{ flex: 2 }} disabled={approving} onClick={handleApprove}>
-                      {approving ? 'Approving…' : '✓ Approve & Open WhatsApp'}
+                    <button className="btn btn-outline" style={{ flex: 1 }} onClick={closeReminder}>Cancel</button>
+                    <button className="btn btn-success" style={{ flex: 2 }} disabled={approving || isEditingReminder} onClick={handleApprove}>
+                      {approving ? 'Approving…' : draftData.client_phone ? '✓ Approve & Open WhatsApp' : '✓ Approve'}
                     </button>
                   </div>
                 ) : (
                   <div>
-                    <div className="success-box">WhatsApp opened. After sending, tap below.</div>
+                    <div className="success-box">
+                      {waLink
+                        ? 'WhatsApp opened. After sending, tap Mark as Sent.'
+                        : 'Approved. No phone number is stored for this client: copy the message above, send it yourself, then tap Mark as Sent.'}
+                    </div>
                     <div style={{ display: 'flex', gap: 10 }}>
-                      <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => window.open(waLink, '_blank')}>Re-open WhatsApp</button>
-                      <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleMarkSent}>✓ Mark as Sent</button>
+                      {waLink && <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => window.open(waLink, '_blank')}>Re-open WhatsApp</button>}
+                      <button className="btn btn-primary" style={{ flex: 2 }} disabled={sending} onClick={handleMarkSent}>
+                        {sending ? 'Saving…' : '✓ Mark as Sent'}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -307,7 +365,7 @@ export default function BillsScreen({ showToast }) {
   )
 }
 
-function InvoiceCard({ inv, onReminder, onMarkPaid }) {
+function InvoiceCard({ inv, onReminder, onMarkPaid, busy }) {
   const isPaid = inv.status === 'paid'
   return (
     <div className="card" style={{ borderLeft: `4px solid ${isPaid ? 'var(--success)' : inv.days_overdue > 0 ? 'var(--danger)' : 'var(--primary)'}` }}>
@@ -339,8 +397,8 @@ function InvoiceCard({ inv, onReminder, onMarkPaid }) {
             </button>
           )}
           {onMarkPaid && (
-            <button className="btn btn-success btn-sm" style={{ flex: 1 }} onClick={onMarkPaid}>
-              ✓ Mark Paid
+            <button className="btn btn-success btn-sm" style={{ flex: 1 }} disabled={busy} onClick={onMarkPaid}>
+              {busy ? "Saving…" : "✓ Mark Paid"}
             </button>
           )}
         </div>

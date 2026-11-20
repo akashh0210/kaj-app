@@ -1,5 +1,28 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchContracts, extractContractText, extractContractFile, confirmContract, editContractField } from '../api.js'
+import LoadError from '../components/LoadError.jsx'
+
+// Turn the edit box's text into the type the field stores; empty means null.
+function coerceFieldValue(key, raw) {
+  const v = String(raw ?? '').trim()
+  if (v === '') return null
+  if (key === 'contract_value') {
+    const n = Number(v.replace(/[,\s]|rs\.?|₹/gi, ''))
+    if (!Number.isFinite(n) || n < 0) throw new Error('Enter the contract value as a number, e.g. 38500')
+    return n
+  }
+  if (key === 'gst_extra' || key === 'extras_chargeable') {
+    if (/^(yes|true|y)$/i.test(v)) return true
+    if (/^(no|false|n)$/i.test(v)) return false
+    throw new Error('Enter Yes or No')
+  }
+  if (/_date$/.test(key)) {
+    const ok = /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)) && new Date(v).toISOString().startsWith(v)
+    if (!ok) throw new Error('Enter the date as YYYY-MM-DD, e.g. 2026-04-01')
+    return v
+  }
+  return v
+}
 
 function formatRs(n) {
   if (!n && n !== 0) return '—'
@@ -20,12 +43,18 @@ export default function ContractsScreen({ showToast }) {
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef()
 
+  const [loadError, setLoadError] = useState(null)
+
   async function loadContracts() {
     setLoading(true)
+    setLoadError(null)
     try {
-      setContracts(await fetchContracts())
+      const list = await fetchContracts()
+      setContracts(list)
+      return list
     } catch (e) {
-      showToast('Error: ' + e.message)
+      setLoadError(e.message)
+      return null
     } finally {
       setLoading(false)
     }
@@ -39,7 +68,7 @@ export default function ContractsScreen({ showToast }) {
     setView('extract')
     try {
       const { extracted: data } = await extractContractFile(file)
-      setExtracted({ ...data, source_ref: file.name })
+      setExtracted(data) // keep the server's unique source_ref
       setView('confirm')
     } catch (e) {
       showToast('Extraction failed: ' + e.message)
@@ -55,7 +84,7 @@ export default function ContractsScreen({ showToast }) {
     setView('extract')
     try {
       const { extracted: data } = await extractContractText(pasteText)
-      setExtracted({ ...data, source_ref: 'pasted-text' })
+      setExtracted(data)
       setView('confirm')
     } catch (e) {
       showToast('Extraction failed: ' + e.message)
@@ -83,17 +112,23 @@ export default function ContractsScreen({ showToast }) {
 
   async function handleEditSave() {
     if (!editField) return
+    let value
+    try {
+      value = coerceFieldValue(editField.key, editField.value)
+    } catch (e) {
+      return showToast(e.message)
+    }
     setSaving(true)
     try {
       await editContractField(selectedContract.id, {
-        [editField.key]: editField.value,
+        [editField.key]: value,
         edited_by: 'owner',
       })
       showToast('Field updated ✓')
       setEditField(null)
-      await loadContracts()
-      const refreshed = contracts.find(c => c.id === selectedContract.id)
-      if (refreshed) setSelectedContract(refreshed)
+      const list = await loadContracts() // use the fresh list, not stale state
+      const refreshed = list?.find(c => c.id === selectedContract.id)
+      setSelectedContract(refreshed || { ...selectedContract, [editField.key]: value })
     } catch (e) {
       showToast('Edit failed: ' + e.message)
     } finally {
@@ -109,7 +144,7 @@ export default function ContractsScreen({ showToast }) {
         <button className="btn btn-primary btn-sm" onClick={() => setView('add')}>+ Add</button>
       </div>
 
-      {loading ? <div className="spinner" /> : (
+      {loading ? <div className="spinner" /> : loadError ? <LoadError message={loadError} onRetry={loadContracts} /> : (
         contracts.length === 0
           ? <div className="empty-state"><p>No contracts yet. Add one above.</p></div>
           : contracts.map(c => (
@@ -342,6 +377,9 @@ const EDITABLE_FIELDS = {
   extras_chargeable: 'Extras Chargeable',
 }
 
+// Worked out by code from the dates and frequency; shown but not editable.
+const COMPUTED_FIELDS = new Set(['renewal_reminder_date'])
+
 function ExtractedFields({ data, onEdit }) {
   return (
     <div className="field-list">
@@ -349,24 +387,36 @@ function ExtractedFields({ data, onEdit }) {
         const val = data[key]
         const isNull = val === null || val === undefined || val === ''
         const isFlag = data.needs_review?.some(n => n.toLowerCase().includes(key.toLowerCase()))
-
-        return (
-          <div
-            key={key}
-            className={`field-row${isFlag ? ' flagged' : ''}`}
-            onClick={onEdit ? () => onEdit({ key, value: val === null ? '' : String(val) }) : undefined}
-            style={onEdit ? { cursor: 'pointer' } : {}}
-          >
+        const isBool = key === 'gst_extra' || key === 'extras_chargeable'
+        const shown = isNull ? 'null' : isBool ? (val ? 'Yes' : 'No') :
+          key === 'contract_value' ? `Rs ${Number(val).toLocaleString('en-IN')}` : String(val)
+        const editable = onEdit && !COMPUTED_FIELDS.has(key)
+        const content = (
+          <>
             <span className="field-key">
               {label}
-              {isFlag && <span style={{ marginLeft: 4, color: 'var(--accent)' }}>⚠</span>}
+              {isFlag && <span style={{ marginLeft: 4, color: 'var(--accent)' }} aria-label="needs review">⚠</span>}
+              {COMPUTED_FIELDS.has(key) && <span style={{ marginLeft: 4, fontSize: '.7rem', color: 'var(--gray-400)' }}>(auto)</span>}
             </span>
             <span className="field-val" style={isNull ? { color: 'var(--gray-400)', fontStyle: 'italic' } : {}}>
-              {isNull ? 'null' : key === 'gst_extra' || key === 'extras_chargeable' ? (val ? 'Yes' : 'No') :
-                key === 'contract_value' ? `Rs ${Number(val).toLocaleString('en-IN')}` : String(val)}
-              {onEdit && <span style={{ marginLeft: 6, color: 'var(--primary)', fontSize: '.75rem' }}>✏</span>}
+              {shown}
+              {editable && <span style={{ marginLeft: 6, color: 'var(--primary)', fontSize: '.75rem' }} aria-hidden="true">✏</span>}
             </span>
-          </div>
+          </>
+        )
+
+        return editable ? (
+          <button
+            type="button"
+            key={key}
+            className={`field-row field-row-btn${isFlag ? ' flagged' : ''}`}
+            aria-label={`Edit ${label}: ${shown}${isFlag ? ' (needs review)' : ''}`}
+            onClick={() => onEdit({ key, value: isNull ? '' : isBool ? (val ? 'Yes' : 'No') : String(val) })}
+          >
+            {content}
+          </button>
+        ) : (
+          <div key={key} className={`field-row${isFlag ? ' flagged' : ''}`}>{content}</div>
         )
       })}
     </div>
