@@ -40,6 +40,7 @@ Key variables:
 |----------|-------------|
 | `GEMINI_API_KEY` | Your Gemini API key (never logged) |
 | `GEMINI_MODEL` | Main model (default: `gemini-4-hydrogen`) |
+| `GEMINI_USE_VERTEX` | `true` to call Gemini through Vertex AI with Application Default Credentials (no API key). Needs `GOOGLE_CLOUD_PROJECT`; `GOOGLE_CLOUD_LOCATION` defaults to `global`. On Cloud Run the service account needs `roles/aiplatform.user`. |
 | `GEMINI_FALLBACK_MODEL` | Second model, used when the main one is overloaded or out of quota, and for the "too many flags" retry. If unset, those steps are skipped. |
 | `FIREBASE_PROJECT_ID` | Firebase project ID |
 | `FIREBASE_CLIENT_EMAIL` | Service account email |
@@ -168,6 +169,11 @@ gcloud run deploy kaj-app \
 ```
 
 > Store secrets in **Google Secret Manager** and reference them with `--set-secrets`.
+
+With Vertex mode no API key is needed on Cloud Run. Set `GEMINI_USE_VERTEX=true`, `GOOGLE_CLOUD_PROJECT`,
+`GOOGLE_CLOUD_LOCATION` and `KAJ_STORE=local` (demo without Firestore; the container seeds demo data on start,
+and data lives in memory until the instance restarts). For `--source` deploys the Cloud Run service account also
+needs `roles/run.builder` in new projects.
 
 ### After deploy
 

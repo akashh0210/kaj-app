@@ -10,8 +10,8 @@ import { app } from '../server.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA = path.join(__dirname, '..', 'demo-data', 'KAJ_Demo_Data')
 
-if (!process.env.GEMINI_API_KEY) {
-  console.error('GEMINI_API_KEY is not set; this test needs the real key.')
+if (!process.env.GEMINI_API_KEY && process.env.GEMINI_USE_VERTEX !== 'true') {
+  console.error('Set GEMINI_API_KEY or GEMINI_USE_VERTEX=true; this test makes real Gemini calls.')
   process.exit(1)
 }
 

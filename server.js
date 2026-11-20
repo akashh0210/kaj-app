@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url'
 import multer from 'multer'
 import { initDb, getTenantCollection } from './db.js'
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import fs from 'fs'
 import crypto from 'crypto'
 import { execFileSync } from 'child_process'
@@ -29,7 +30,49 @@ const MODEL_PRIMARY = process.env.GEMINI_MODEL || 'gemini-4-hydrogen'
 // Second model for the "too many flags" retry. If unset, the retry is skipped.
 const MODEL_FALLBACK = process.env.GEMINI_FALLBACK_MODEL || null
 
+// Vertex AI mode: GEMINI_USE_VERTEX=true uses Application Default Credentials (gcloud ADC locally,
+// the Cloud Run service account in production) instead of an API key.
+const USE_VERTEX = process.env.GEMINI_USE_VERTEX === 'true'
+const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT
+const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global'
+const GEMINI_ENABLED = USE_VERTEX || Boolean(GEMINI_API_KEY)
+
+// The two SDKs spell schema types differently ("string" vs "STRING"); Vertex wants upper case.
+function toVertexSchema(schema) {
+  if (Array.isArray(schema)) return schema.map(toVertexSchema)
+  if (!schema || typeof schema !== 'object') return schema
+  const out = {}
+  for (const [k, v] of Object.entries(schema)) {
+    out[k] = k === 'type' && typeof v === 'string' ? v.toUpperCase()
+      : k === 'properties' ? Object.fromEntries(Object.entries(v).map(([p, s]) => [p, toVertexSchema(s)]))
+      : typeof v === 'object' ? toVertexSchema(v) : v
+  }
+  return out
+}
+
+// Adapter: same getGenerativeModel().generateContent() shape as @google/generative-ai,
+// backed by @google/genai on Vertex, so call sites work in both modes.
+let vertexAI = null
+function vertexClient() {
+  if (!VERTEX_PROJECT) throw new Error('GOOGLE_CLOUD_PROJECT is not set (needed for Vertex AI)')
+  vertexAI ||= new GoogleGenAI({ vertexai: true, project: VERTEX_PROJECT, location: VERTEX_LOCATION })
+  return {
+    getGenerativeModel({ model, generationConfig = {} }, requestOptions = {}) {
+      const config = { ...generationConfig }
+      if (config.responseSchema) config.responseSchema = toVertexSchema(config.responseSchema)
+      if (requestOptions.timeout) config.httpOptions = { timeout: requestOptions.timeout }
+      return {
+        async generateContent(contents) {
+          const res = await vertexAI.models.generateContent({ model, contents, config })
+          return { response: { text: () => res.text ?? '' } }
+        },
+      }
+    },
+  }
+}
+
 function geminiClient() {
+  if (USE_VERTEX) return vertexClient()
   if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not set')
   return new GoogleGenerativeAI(GEMINI_API_KEY)
 }
@@ -409,7 +452,7 @@ const CORE_FIELDS = ['contract_no', 'client_name', 'start_date', 'end_date', 'vi
 async function extractContract(content, mimeType, rawText = '') {
   let parsed = null
 
-  if (GEMINI_API_KEY) {
+  if (GEMINI_ENABLED) {
     try {
       parsed = await extractContractWithModel(MODEL_PRIMARY, content, mimeType)
       if (MODEL_FALLBACK && parsed.needs_review.length > 2) {
@@ -920,7 +963,7 @@ app.post('/api/reminders/draft', async (req, res) => {
     const days_overdue = daysOverdue(due_date)
 
     let draft = null
-    if (GEMINI_API_KEY) {
+    if (GEMINI_ENABLED) {
       try {
         const genAI = geminiClient()
         const model = genAI.getGenerativeModel({
