@@ -449,7 +449,52 @@ const NO_FIELDS_NOTE = 'Extraction failed: no contract fields could be read from
 // Core fields: if every one of these is empty, nothing useful was read.
 const CORE_FIELDS = ['contract_no', 'client_name', 'start_date', 'end_date', 'visit_frequency', 'contract_value']
 
-async function extractContract(content, mimeType, rawText = '') {
+// ── Second opinion: compare two models field by field ──────────────────────
+const COMPARE_FIELDS = ['contract_no', 'client_name', 'site_address', 'equipment', 'start_date', 'end_date',
+  'visit_frequency', 'contract_value', 'gst_extra', 'payment_terms', 'extras_chargeable']
+const FREE_TEXT_FIELDS = new Set(['client_name', 'site_address', 'payment_terms'])
+const DISAGREE_NOTE = 'Two AI models disagreed; please check'
+
+const normText = v => String(v).toLowerCase().replace(/[^a-z0-9.]+/g, ' ').trim()
+function normEquipment(list) {
+  if (!Array.isArray(list)) return null
+  return list.map(e => [
+    Number(e.quantity) || null,
+    normText(e.type ?? '').replace(/\bunits?\b|\(s\)/g, '').replace(/\s+/g, ' ').trim(),
+    normText(e.capacity ?? '').replace(/\s+/g, ''),
+  ].join('|')).sort().join(';')
+}
+const isEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
+
+// Same value for this field? Free text agrees if one wording contains the other.
+function fieldsAgree(field, a, b) {
+  if (isEmpty(a) || isEmpty(b)) return isEmpty(a) && isEmpty(b)
+  switch (field) {
+    case 'equipment': return normEquipment(a) === normEquipment(b)
+    case 'visit_frequency': return normalizeFrequency(a) === normalizeFrequency(b)
+    case 'contract_value': return Number(a) === Number(b)
+    case 'gst_extra':
+    case 'extras_chargeable': return Boolean(a) === Boolean(b)
+    default: {
+      const x = normText(a), y = normText(b)
+      return x === y || (FREE_TEXT_FIELDS.has(field) && (x.includes(y) || y.includes(x)))
+    }
+  }
+}
+
+const shortValue = v => isEmpty(v) ? 'empty' : JSON.stringify(v).slice(0, 80)
+
+// Keep the main model's values; flag every field where the second model gave a different answer.
+function mergeSecondOpinion(primary, second, primaryModel, secondModel) {
+  const disagreements = COMPARE_FIELDS.filter(f => !fieldsAgree(f, primary[f], second[f]))
+  for (const f of disagreements) {
+    primary.needs_review.push(
+      `${DISAGREE_NOTE} ${f} (${primaryModel}: ${shortValue(primary[f])}, ${secondModel}: ${shortValue(second[f])}).`)
+  }
+  return disagreements
+}
+
+async function extractContract(content, mimeType, rawText = '', { callModel = extractContractWithModel } = {}) {
   let parsed = null
 
   // Records which model answered and why a second model was asked, so the badge can be explained.
@@ -457,20 +502,17 @@ async function extractContract(content, mimeType, rawText = '') {
 
   if (GEMINI_ENABLED) {
     try {
-      parsed = await extractContractWithModel(MODEL_PRIMARY, content, mimeType)
+      parsed = await callModel(MODEL_PRIMARY, content, mimeType)
       log.primary_flags = parsed.needs_review.length
       if (MODEL_FALLBACK && parsed.needs_review.length > 2) {
         log.retry_reason = `${MODEL_PRIMARY} flagged ${parsed.needs_review.length} fields (more than 2)`
         log.retry_model = MODEL_FALLBACK
         try {
-          const retry = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
-          log.retry_flags = retry.needs_review.length
-          if (retry.needs_review.length < parsed.needs_review.length) {
-            parsed = retry
-            log.kept = MODEL_FALLBACK
-          } else {
-            log.kept = MODEL_PRIMARY
-          }
+          const second = await callModel(MODEL_FALLBACK, content, mimeType)
+          log.retry_flags = second.needs_review.length
+          // The main model's values are always kept; disagreements are flagged for the owner.
+          log.disagreements = mergeSecondOpinion(parsed, second, MODEL_PRIMARY, MODEL_FALLBACK)
+          log.kept = MODEL_PRIMARY
         } catch (e) {
           log.retry_error = String(e.status || e.message).slice(0, 120)
           log.kept = MODEL_PRIMARY
@@ -486,7 +528,7 @@ async function extractContract(content, mimeType, rawText = '') {
         log.retry_reason = `${MODEL_PRIMARY} unavailable (${e.status || 'network'})`
         log.retry_model = MODEL_FALLBACK
         try {
-          parsed = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
+          parsed = await callModel(MODEL_FALLBACK, content, mimeType)
           log.retry_flags = parsed.needs_review.length
           log.kept = MODEL_FALLBACK
         } catch (e2) {
@@ -1413,4 +1455,4 @@ if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => console.log(`KAJ API server running on port ${PORT}`))
 }
 
-export { app, extractContract, parseContractText, extractTextFromPdf, normalizeFrequency, addReviewNote, namesMatch }
+export { app, extractContract, parseContractText, extractTextFromPdf, normalizeFrequency, addReviewNote, namesMatch, mergeSecondOpinion, fieldsAgree }

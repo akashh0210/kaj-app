@@ -370,10 +370,13 @@ function ExtractionBadge({ method, log }) {
   if (!label) return null
   const cls = method === 'fallback_parser' ? 'badge badge-warning' : 'badge badge-gray'
   // Explain a second-model retry: why it happened and which answer was kept
+  const name = m => extractionLabel('gemini:' + m).replace('Read by ', '')
+  const n = log?.disagreements?.length
   const why = log?.retry_reason
-    ? `Second opinion asked because ${log.retry_reason}` +
-      (log.retry_flags !== undefined ? `; ${log.retry_model} flagged ${log.retry_flags}` : '') +
-      (log.kept ? `. Kept ${extractionLabel('gemini:' + log.kept).replace('Read by ', '')}'s answer.` : '.')
+    ? `Second opinion from ${name(log.retry_model)} because ${log.retry_reason}. ` +
+      (n === undefined ? (log.kept ? `Kept ${name(log.kept)}'s answer.` : '')
+        : n === 0 ? 'Both models agreed on every field.'
+        : `They disagreed on ${n} field${n === 1 ? '' : 's'} (flagged below); ${name(log.primary_model)}'s values are shown.`)
     : null
   return (
     <div style={{ marginBottom: 10 }}>

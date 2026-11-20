@@ -32,13 +32,13 @@ Switch roles with the toggle in the top bar (demo mode, no login).
 |---|---|
 | Access | **Vertex AI** (`GEMINI_USE_VERTEX=true`), location `global`, Application Default Credentials. No API key: on Cloud Run the service account has `roles/aiplatform.user`. An API-key mode (`GEMINI_API_KEY`) is still supported. |
 | Main model | **`gemini-4-hydrogen`**: contracts (PDF, photo or text) and voice notes, with structured JSON output (`responseSchema`). |
-| Second model | **`gemini-3.8-flash`**: (1) a second opinion when the main model flags more than 2 fields; the answer with fewer flags is kept; (2) a stand-in when the main model is overloaded or out of quota. |
+| Second model | **`gemini-3.8-flash`**: (1) a second opinion when the main model flags more than 2 fields: the two answers are compared field by field, the main model's values are kept, and every field where they differ is flagged "Two AI models disagreed; please check"; (2) a stand-in when the main model is overloaded or out of quota. |
 | Not used | `gemini-4-carbon` was tested as a stronger second model but returned `403 Access requires an eligible paid billing account in a supported region` on this project. |
 | Code, not AI | Visit schedule, renewal date, days overdue, rupee totals, site-to-visit matching and all validation are computed in code. |
 
 Every contract result carries `extraction_method` (e.g. `gemini:gemini-4-hydrogen`, or `fallback_parser` if Gemini failed)
 and an `extraction_log` explaining any second-model retry, for example
-`gemini-4-hydrogen flagged 3 fields (more than 2); gemini-3.8-flash flagged 2; kept gemini-3.8-flash`.
+`gemini-4-hydrogen flagged 3 fields (more than 2)`, with the list of fields where the two models disagreed.
 The contract screen shows both under a "Read by …" badge.
 
 ## Accuracy (live tests, 2026-11-20)
@@ -52,7 +52,7 @@ Real Gemini calls, scored against `demo-data/KAJ_Demo_Data/AnswerKey.csv`.
 | C1 Greenview (PDF) | gemini-4-hydrogen | **10/10** fields, no flags (as expected) |
 | C2 Ballygunge Dental (PDF) | gemini-4-hydrogen | **8/8**, start date, missing end date and renewal flagged (as expected) |
 | C4 New Town (hand-copied, phone photo) | gemini-4-hydrogen | **9/9** |
-| C5 Behala Nursing Home (PDF, on the live Cloud Run site) | gemini-3.8-flash (second opinion kept) | **10/10**, missing contract value flagged (as expected) |
+| C5 Behala Nursing Home (PDF, on the live Cloud Run site) | gemini-3.8-flash (under the old rule, the second opinion with fewer flags was kept) | **10/10**, missing contract value flagged (as expected) |
 
 Before the `visit_frequency` enum was added, C1 scored 9/10 ("Quarterly (4 visits per year)").
 
@@ -139,8 +139,11 @@ Or build once and let Express serve everything: `npm run build && node server.js
    stored under a unique name and kept as the record's `source_ref`.
 2. The backend sends the file itself (image or PDF) or the text to `GEMINI_MODEL` with a
    `responseSchema` (structured JSON; `visit_frequency` is an enum: Monthly, Quarterly, Half-yearly, Yearly).
-3. If more than 2 fields are flagged, it asks `GEMINI_FALLBACK_MODEL` for a second opinion and keeps the
-   result with fewer flags. The reason is logged and shown on screen.
+3. If more than 2 fields are flagged, it asks `GEMINI_FALLBACK_MODEL` for a second opinion and compares
+   the two field by field. Where they agree the value is kept; where they disagree the main model's value is
+   kept and the field is flagged "Two AI models disagreed; please check" (with both values). Wording-only
+   differences (case, "Split AC units" vs "split AC") count as agreement. The reason and the list of
+   disagreements are logged and shown on screen.
 4. Transient errors (429/5xx/overload) are retried with backoff; if the main model stays unavailable
    or its daily quota is used up, the second model is tried.
 5. Only if Gemini fails completely does a rule-based parser run. It adds
@@ -187,6 +190,7 @@ Or build once and let Express serve everything: `npm run build && node server.js
 |---------|----------------|
 | `NODE_ENV=test node tests/test_step6_live.js` | **Live Gemini** contract extraction of C1 and C2 through the real upload route, scored against `AnswerKey.csv`; also checks upload names are unique |
 | `NODE_ENV=test node tests/test_step6_live.js "demo-data/KAJ_Demo_Data/C4_photo.jpeg=C4"` | Same, plus a contract photo (hand-copied C4 contract, photographed) |
+| `node tests/test_second_opinion.js` | Second-opinion merge with **mocked** C5 answers (no network): disagreements flagged, main values kept, no retry at 2 flags, stand-in on 503 |
 | `NODE_ENV=test node tests/test_voice_live.js [V1 V2 …]` | **Live Gemini** voice extraction of `v1.ogg`–`v5.ogg` (or the ones named), scored against the V rows of `AnswerKey.csv` |
 | `node tests/test_step3.js`, `test_step4.js`, `test_step5.js` | Earlier step tests (extraction, visit confirmation, rate-card billing) |
 
