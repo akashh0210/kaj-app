@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchVisits, submitVoiceUpdate, submitVisitUpdate } from '../api.js'
+import { ArrowLeft, Camera, Check, ChevronRight, Mic, RotateCcw, Square, TriangleAlert } from 'lucide-react'
 import LoadError from '../components/LoadError.jsx'
 import { STRINGS, loadLang, saveLang } from '../i18n/technician.js'
 
@@ -26,6 +27,7 @@ export default function TechnicianScreen({ showToast }) {
   const [confirming, setConfirming] = useState(false)
   const [photo, setPhoto] = useState(null)
   const [failedBlob, setFailedBlob] = useState(null) // recording kept after a failed upload
+  const [stamped, setStamped] = useState(false) // shows the Confirmed stamp after a successful confirm
   const chunksRef = useRef([])
   const discardRef = useRef(false) // set when leaving a visit mid-recording
   const photoInputRef = useRef()
@@ -147,6 +149,10 @@ export default function TechnicianScreen({ showToast }) {
         submitted_by: 'technician',
       })
       showToast(t.submitted)
+      // Visual only: let the "Confirmed" stamp land on the slip before leaving the visit
+      setStamped(true)
+      await new Promise(r => setTimeout(r, 1200))
+      setStamped(false)
       leaveVisit()
       await load()
     } catch (e) {
@@ -168,8 +174,8 @@ export default function TechnicianScreen({ showToast }) {
     <div lang={lang}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
         <div>
-          <h2 style={{ marginBottom: 4 }}>{t.todaysVisits}</h2>
-          <p style={{ color: 'var(--gray-500)', fontSize: '.85rem', marginBottom: 16 }}>
+          <h2 className="page-title">{t.todaysVisits}</h2>
+          <p className="page-sub">
             {new Date().toLocaleDateString(t.dateLocale, { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
@@ -184,24 +190,22 @@ export default function TechnicianScreen({ showToast }) {
             const body = (
               <>
                 <div className="card-row">
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div className="card-title">{v.client_name}</div>
                     <div className="card-sub">{v.site_address?.split(',')[0]}</div>
-                    <div className="card-sub" style={{ marginTop: 2 }}>
+                    <div className="card-sub tabular" style={{ marginTop: 2 }}>
                       {v.units?.map(u => `${u.quantity}× ${u.type}`).join(', ')}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                     <StatusChip status={v.status} t={t} />
                     {openable && (
-                      <span style={{ fontSize: '.75rem', color: 'var(--primary)', fontWeight: 600 }} aria-hidden="true">{t.open} →</span>
+                      <span className="visit-open" aria-hidden="true">{t.open}<ChevronRight size={16} /></span>
                     )}
                   </div>
                 </div>
                 {v.job_summary && (
-                  <div lang="en" style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--gray-600)', background: 'var(--gray-50)', borderRadius: 6, padding: '6px 8px' }}>
-                    {v.job_summary}
-                  </div>
+                  <div lang="en" className="tech-note">{v.job_summary}</div>
                 )}
               </>
             )
@@ -226,12 +230,12 @@ export default function TechnicianScreen({ showToast }) {
   // ── Active visit – recording ───────────────────────────────────────────────
   return (
     <div lang={lang}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+      <div className="back-row">
         <button type="button" className="btn btn-outline btn-sm" onClick={leaveVisit}>
-          <span aria-hidden="true">← </span>{t.back}
+          <ArrowLeft size={16} aria-hidden="true" />{t.back}
         </button>
-        <div style={{ flex: 1 }}>
-          <h2 className="card-title" style={{ fontSize: '1rem' }}>{activeVisit.client_name}</h2>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 className="card-title" style={{ fontSize: '1.05rem' }}>{activeVisit.client_name}</h2>
           <div className="card-sub">{activeVisit.site_address?.split(',')[0]}</div>
         </div>
         {langToggle}
@@ -248,8 +252,8 @@ export default function TechnicianScreen({ showToast }) {
       )}
 
       {!processing && !extracted && !failedBlob && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 32, gap: 24 }}>
-          <p id="mic-hint" style={{ color: 'var(--gray-600)', fontSize: '.9rem', textAlign: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 28, gap: 22 }}>
+          <p id="mic-hint" style={{ color: 'var(--text-2)', fontSize: '.95rem', textAlign: 'center' }}>
             {recording ? t.tapToStop : t.tapToRecord}
           </p>
 
@@ -261,12 +265,12 @@ export default function TechnicianScreen({ showToast }) {
             aria-pressed={recording}
             aria-describedby="mic-hint"
           >
-            {recording ? <StopIcon /> : <MicIcon />}
+            {recording ? <Square aria-hidden="true" fill="currentColor" /> : <Mic aria-hidden="true" />}
           </button>
 
-          <div role="status" aria-live="polite" style={{ minHeight: 20 }}>
+          <div role="status" aria-live="polite" style={{ minHeight: 22 }}>
             {recording && (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--danger)', fontSize: '.85rem', fontWeight: 600 }}>
+              <div className="rec-status">
                 <span className="rec-dot" aria-hidden="true" />
                 {t.recording}
               </div>
@@ -275,12 +279,12 @@ export default function TechnicianScreen({ showToast }) {
 
           {photo ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '.85rem' }}>
-              <span className="chip chip-green"><span aria-hidden="true">📷 </span>{t.photoAttached(photo.name)}</span>
+              <span className="pill pill-blue"><Camera size={14} aria-hidden="true" />{t.photoAttached(photo.name)}</span>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPhoto(null)} aria-label={t.removePhoto}>{t.remove}</button>
             </div>
           ) : (
-            <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} disabled={recording} onClick={() => photoInputRef.current?.click()}>
-              <span aria-hidden="true">📷 </span>{t.addPhoto}
+            <button type="button" className="btn btn-outline btn-sm" disabled={recording} onClick={() => photoInputRef.current?.click()}>
+              <Camera size={16} aria-hidden="true" />{t.addPhoto}
             </button>
           )}
           <input ref={photoInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handlePhoto} aria-label={t.addPhoto} />
@@ -296,89 +300,64 @@ export default function TechnicianScreen({ showToast }) {
 
       {extracted && !processing && (
         <div>
-          {extracted.needs_review?.length > 0 && (
-            <div className="review-strip" role="region" aria-label={t.needsReview}>
-              <h3><span aria-hidden="true">⚠️ </span>{t.needsReview}</h3>
-              <ul lang="en">
-                {extracted.needs_review.map((n, i) => <li key={i}>{n}</li>)}
-              </ul>
+          {/* Job slip: off-white paper that slides up once */}
+          <article className="job-slip" aria-labelledby="slip-title">
+            {stamped && <div className="stamp" role="img" aria-label={t.confirmedStamp}>{t.confirmedStamp}</div>}
+            <div className="slip-meta">
+              <span>{t.jobSlip}</span>
+              <span className="tabular">{new Date().toLocaleDateString(t.dateLocale, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            </div>
+            <h3 id="slip-title">{activeVisit.client_name}</h3>
+            <p className="card-sub" style={{ color: 'var(--ink-2)', marginBottom: 10 }}>{t.jobSummary}</p>
+            <p lang="en" className="slip-summary">{extracted.summary_english || t.noSummary}</p>
+            {lang === 'bn' && extracted.summary_english && (
+              <p style={{ fontSize: '.8rem', color: 'var(--ink-2)', marginTop: -6, marginBottom: 12 }}>{t.summaryEnglishNote}</p>
+            )}
+
+            <ul className="slip-lines">
+              {(extracted.units_serviced || []).map((u, i) => (
+                <li key={`s${i}`}><span><span className="k">{t.unitsServiced}</span>{u.type ? ` · ${u.type}` : ''}</span><span className="qty">{u.quantity ?? '?'}</span></li>
+              ))}
+              {(extracted.units_pending || []).map((u, i) => (
+                <li key={`p${i}`}><span><span className="k">{t.unitsPending}</span>{u.type ? ` · ${u.type}` : ''}</span><span className="qty">{u.quantity ?? '?'}</span></li>
+              ))}
+              {(extracted.extra_work || []).map((e, i) => (
+                <li key={`e${i}`}><span><span className="k">{t.extraWork}</span>{e.item ? ` · ${e.item}` : ''}</span><span className="qty">× {e.quantity ?? '?'}</span></li>
+              ))}
+            </ul>
+
+            {extracted.needs_review?.length > 0 && (
+              <>
+                <p className="slip-flags-title"><TriangleAlert size={14} aria-hidden="true" />{t.needsReview}</p>
+                <ul className="slip-flags" lang="en">
+                  {extracted.needs_review.map((n, i) => <li key={i}>{n}</li>)}
+                </ul>
+              </>
+            )}
+          </article>
+
+          {!stamped && (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={handleReRecord} disabled={confirming}>
+                <RotateCcw size={18} aria-hidden="true" />{t.reRecord}
+              </button>
+              <button type="button" className="btn btn-primary" style={{ flex: 2 }} disabled={confirming} onClick={handleConfirm}>
+                {confirming ? t.confirming : <><Check size={18} aria-hidden="true" />{t.confirm}</>}
+              </button>
             </div>
           )}
-
-          <div className="card">
-            <h3 style={{ marginBottom: 10 }}>{t.jobSummary}</h3>
-            <p lang="en" style={{ fontSize: '.9rem', color: 'var(--gray-700)', lineHeight: 1.6 }}>
-              {extracted.summary_english || t.noSummary}
-            </p>
-            {lang === 'bn' && extracted.summary_english && (
-              <p style={{ fontSize: '.75rem', color: 'var(--gray-500)', marginTop: 4 }}>{t.summaryEnglishNote}</p>
-            )}
-            {extracted.units_serviced?.length > 0 && (
-              <div style={{ marginTop: 10 }}>
-                <h4 className="label">{t.unitsServiced}</h4>
-                {extracted.units_serviced.map((u, i) => (
-                  <span key={i} className="chip chip-green" style={{ marginRight: 4 }}>{u.quantity ?? '?'} {u.type}</span>
-                ))}
-              </div>
-            )}
-            {extracted.units_pending?.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <h4 className="label">{t.unitsPending}</h4>
-                {extracted.units_pending.map((u, i) => (
-                  <span key={i} className="chip chip-amber" style={{ marginRight: 4 }}>{u.quantity ?? '?'} {u.type}</span>
-                ))}
-              </div>
-            )}
-            {extracted.extra_work?.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <h4 className="label">{t.extraWork}</h4>
-                {extracted.extra_work.map((e, i) => (
-                  <span key={i} className="chip chip-blue" style={{ marginRight: 4 }}>{e.quantity ?? '?'} × {e.item}</span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={handleReRecord}>
-              <span aria-hidden="true">🔁 </span>{t.reRecord}
-            </button>
-            <button type="button" className="btn btn-success" style={{ flex: 2 }} disabled={confirming} onClick={handleConfirm}>
-              {confirming ? t.confirming : <><span aria-hidden="true">✓ </span>{t.confirm}</>}
-            </button>
-          </div>
         </div>
       )}
     </div>
   )
 }
 
-function MicIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-      <line x1="12" y1="19" x2="12" y2="23"/>
-      <line x1="8" y1="23" x2="16" y2="23"/>
-    </svg>
-  )
-}
-
-function StopIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-      <rect x="6" y="6" width="12" height="12" rx="2"/>
-    </svg>
-  )
-}
-
 function StatusChip({ status, t }) {
   const map = {
-    done: ['chip chip-green', '✓'],
-    scheduled: ['chip chip-blue', '⏳'],
-    pending_confirmation: ['chip chip-amber', '⏳'],
-    missed: ['chip chip-red', '✗'],
+    done: 'pill pill-quiet',
+    scheduled: 'pill pill-blue',
+    pending_confirmation: 'pill pill-amber',
+    missed: 'pill pill-amber',
   }
-  const [cls, icon] = map[status] || ['chip chip-gray', '']
-  return <span className={cls}>{icon && <span aria-hidden="true">{icon} </span>}{t.status[status] || status}</span>
+  return <span className={map[status] || 'pill pill-quiet'}>{t.status[status] || status}</span>
 }
