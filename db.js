@@ -5,7 +5,8 @@ import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(__dirname, 'data')
+// KAJ_DATA_DIR lets tests and containers keep the local store somewhere else.
+const DATA_DIR = process.env.KAJ_DATA_DIR || path.join(__dirname, 'data')
 const DB_FILE = path.join(DATA_DIR, 'local_db.json')
 
 export class LocalTimestamp {
@@ -221,8 +222,10 @@ async function initDb() {
     process.env.FIREBASE_CLIENT_EMAIL &&
     process.env.FIREBASE_PRIVATE_KEY
   const isCloudRun = Boolean(process.env.K_SERVICE || process.env.K_REVISION)
+  // KAJ_STORE=local forces the local JSON store (e.g. a Cloud Run demo without Firestore).
+  const forceLocal = process.env.KAJ_STORE === 'local'
 
-  if (hasCert || isCloudRun) {
+  if (!forceLocal && (hasCert || isCloudRun)) {
     try {
       const { initializeApp, cert, getApps } = await import('firebase-admin/app')
       const { getFirestore, Timestamp } = await import('firebase-admin/firestore')
@@ -248,7 +251,14 @@ async function initDb() {
       } else {
         app = getApps()[0]
       }
-      dbInstance = getFirestore(app)
+      const firestore = getFirestore(app)
+      // initializeApp succeeds even when Firestore is not set up; make one real read so a
+      // missing database falls back to the local store instead of failing every request.
+      await Promise.race([
+        firestore.collection('_kaj_health').limit(1).get(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore did not respond in 8s')), 8000)),
+      ])
+      dbInstance = firestore
       TimestampClass = Timestamp
       isLocalStore = false
       return { db: dbInstance, Timestamp: TimestampClass, isLocalStore }

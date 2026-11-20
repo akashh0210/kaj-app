@@ -10,17 +10,25 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+# Python + pypdf: PDF text for the rule-based fallback parser (server calls `python`)
+RUN apk add --no-cache python3 py3-pip \
+ && pip install --no-cache-dir --break-system-packages pypdf \
+ && ln -sf /usr/bin/python3 /usr/bin/python
+
 # Only copy what's needed for the server
 COPY package*.json ./
 RUN npm ci --omit=dev
-COPY server.js ./
+COPY server.js db.js ./
+COPY scripts ./scripts
+COPY demo-data ./demo-data
 COPY --from=builder /app/dist ./dist
 
-# Create uploads dir
-RUN mkdir -p uploads
+# Writable dirs for the local JSON store and uploads (in-memory on Cloud Run)
+RUN mkdir -p uploads data
 
 EXPOSE 8080
 ENV PORT=8080
 ENV NODE_ENV=production
 
-CMD ["node", "server.js"]
+# Seed demo data if the local store is empty, then start the server
+CMD ["sh", "-c", "node scripts/seed-if-empty.js; exec node server.js"]

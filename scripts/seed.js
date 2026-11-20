@@ -23,8 +23,9 @@ function ts(dateStr) {
   return Timestamp.fromDate(new Date(dateStr))
 }
 
+// India date (IST), matching the server's todayIST(); containers run in UTC.
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split('T')[0]
 }
 
 async function seed() {

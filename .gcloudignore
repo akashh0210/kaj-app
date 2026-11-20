@@ -1,0 +1,17 @@
+# Files never uploaded by `gcloud run deploy --source .`
+# Secrets: set as Cloud Run environment variables instead.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+.gcloudignore
+node_modules/
+dist/
+uploads/
+data/
+*.log
+.DS_Store
+.claude/
+.agents/
