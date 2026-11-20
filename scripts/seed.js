@@ -1,5 +1,5 @@
 // Seed script: Populates Firestore / local store with demo data from demo-data/KAJ_Demo_Data
-// Contracts: C1, C2, C3 from AnswerKey.csv
+// Contracts: C1, C2, C3, C4 from AnswerKey.csv
 // Invoices: I1, I2, I3 with exact due dates and amounts
 // Rate card: JSON for extra work
 // Visits: generated from contract schedules including today's visits and unbilled extras
@@ -131,6 +131,30 @@ async function seed() {
       source_ref: 'C3_parkstreet_cafe.pdf',
       tenant_id: TENANT_ID,
       created_at: ts('2026-07-01'),
+    },
+    {
+      // C4 (AnswerKey C4): renewal reminder 2026-12-01 fills "Renewals in 30 days"
+      provider_name: 'Das Cooling Services',
+      contract_no: 'DCS/AMC/2026/007',
+      client_name: 'New Town IT Office (Brightlane Technologies)',
+      site_address: 'Action Area I, New Town, Kolkata',
+      equipment: [
+        { type: 'Split AC', capacity: '1.5 ton', quantity: 10 },
+      ],
+      start_date: '2026-01-01',
+      end_date: '2026-12-31',
+      visit_frequency: 'Quarterly',
+      visit_schedule: ['2026-01-01', '2026-04-01', '2026-07-01', '2026-10-01'],
+      contract_value: 72000,
+      gst_extra: true,
+      payment_terms: 'Within 15 days of each visit invoice',
+      renewal_reminder_date: '2026-12-01',
+      extras_chargeable: true,
+      needs_review: [],
+      status: 'confirmed',
+      source_ref: 'C4_newtown_office_COPY_BY_HAND.pdf',
+      tenant_id: TENANT_ID,
+      created_at: ts('2026-01-01'),
     },
   ]
 
