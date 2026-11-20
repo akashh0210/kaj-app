@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { fetchDashboard, fetchVisits, fetchContracts, confirmVisit } from '../api.js'
+import { Check, ChevronRight, TriangleAlert } from 'lucide-react'
 import LoadError from '../components/LoadError.jsx'
 
 function formatRs(n) {
@@ -48,7 +49,7 @@ export default function TodayScreen({ showToast, onNavigate }) {
     setConfirmingId(visitId)
     try {
       await confirmVisit(visitId, { confirmed_by: 'owner' })
-      showToast('Visit confirmed ✓')
+      showToast('Visit confirmed')
       await loadData()
     } catch (e) {
       showToast('Error confirming visit: ' + e.message)
@@ -78,50 +79,44 @@ export default function TodayScreen({ showToast, onNavigate }) {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <h2 style={{ marginBottom: 4 }}>Good {greeting()}</h2>
-        <p style={{ color: 'var(--gray-500)', fontSize: '.85rem' }}>{formatDate(new Date())}</p>
-      </div>
+      <h2 className="page-title">Good {greeting()}</h2>
+      <p className="page-sub">{formatDate(new Date())}</p>
 
-      {/* Needs review strip */}
+      {/* Needs review slip */}
       {totalReviewItems > 0 && (
-        <div className="review-strip">
-          <h3>⚠️ Needs your review ({totalReviewItems})</h3>
+        <section className="review-strip" aria-label={`Needs your review, ${totalReviewItems}`}>
+          <h3><TriangleAlert size={16} aria-hidden="true" />Needs your review ({totalReviewItems})</h3>
           <ul>
             {needsReview.flatMap(c =>
               (c.needs_review || []).map((note, i) => (
-                <li key={c.id + i}><strong>{c.client_name}:</strong> {note}</li>
+                <li key={c.id + i}><span><strong>{c.client_name}:</strong> {note}</span></li>
               ))
             )}
             {pendingVisits.map(v => (
-              <li key={v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0' }}>
-                <span><strong>{v.client_name}:</strong> Visit update awaiting confirmation</span>
+              <li key={v.id} style={{ justifyContent: 'space-between' }}>
+                <span><strong>{v.client_name}:</strong> visit update awaiting confirmation</span>
                 <button
-                  className="btn btn-success btn-sm"
-                  style={{ padding: '2px 8px', fontSize: '.75rem' }}
+                  className="btn btn-primary btn-sm"
                   disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}
                 >
-                  ✓ Confirm
+                  <Check size={16} aria-hidden="true" />Confirm
                 </button>
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
-      {/* Stat cards */}
-      <div className="stat-grid">
-        <StatCard
-          tone="primary"
+      {/* Ledger: label left, amount right */}
+      <ul className="ledger" aria-label="Today's numbers">
+        <LedgerRow
           value={stats?.visits_today ?? 0}
           label="Visits today"
           detail={pendingVisits.length ? `${pendingVisits.length} awaiting confirmation` : null}
           pressed={activeList === 'visits'}
           onClick={() => setActiveList(activeList === 'visits' ? null : 'visits')}
         />
-        <StatCard
-          tone="warning"
-          money
+        <LedgerRow
           value={formatRs(stats?.unbilled_extras_total ?? 0)}
           label="Unbilled extras"
           detail={[
@@ -130,17 +125,14 @@ export default function TodayScreen({ showToast, onNavigate }) {
           ].filter(Boolean).join(' · ')}
           onClick={() => onNavigate?.('bills')}
         />
-        <StatCard
-          tone="danger"
-          money
+        <LedgerRow
+          overdue
           value={formatRs(stats?.overdue_total ?? 0)}
           label="Overdue payments"
           detail={plural(stats?.overdue_count ?? 0, 'invoice')}
           onClick={() => onNavigate?.('bills')}
         />
-        <StatCard
-          tone="success"
-          money
+        <LedgerRow
           value={formatRs(stats?.renewals_value_total ?? 0)}
           label="Renewals in 30 days"
           detail={[
@@ -150,13 +142,13 @@ export default function TodayScreen({ showToast, onNavigate }) {
           pressed={activeList === 'renewals'}
           onClick={() => setActiveList(activeList === 'renewals' ? null : 'renewals')}
         />
-      </div>
-      <p className="stat-footnote">Amounts are before GST.</p>
+      </ul>
+      <p className="footnote">Amounts are before GST.</p>
 
       {/* Expandable lists */}
       {activeList === 'visits' && (
         <div>
-          <div className="section-header"><h2>Today's Visits</h2></div>
+          <div className="section-header"><h2>Today's visits</h2></div>
           {visits.length === 0 ? (
             <div className="empty-state"><p>No visits scheduled for today.</p></div>
           ) : visits.map(v => (
@@ -172,21 +164,19 @@ export default function TodayScreen({ showToast, onNavigate }) {
                 <StatusChip status={v.status} />
               </div>
               {v.status === 'pending_confirmation' && v.pending_update && (
-                <div style={{ marginTop: 8, background: 'var(--accent-light)', padding: 8, borderRadius: 6 }}>
-                  <p style={{ fontSize: '.8rem', color: '#92400e', marginBottom: 6 }}>
-                    <strong>Tech update:</strong> {v.pending_update.summary_english || 'No summary'}
+                <div className="tech-note">
+                  <p style={{ marginBottom: 8, color: 'var(--text)' }}>
+                    <strong>Technician update:</strong> {v.pending_update.summary_english || 'No summary'}
                   </p>
-                  <button className="btn btn-success btn-sm" disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}>
-                    ✓ Confirm Visit as Done
+                  <button className="btn btn-primary btn-sm" disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}>
+                    <Check size={16} aria-hidden="true" />Confirm visit as done
                   </button>
                 </div>
               )}
               {v.job_summary && v.status === 'done' && (
-                <div style={{ marginTop: 6, fontSize: '.8rem', color: 'var(--gray-600)' }}>
-                  ✓ {v.job_summary}
-                </div>
+                <div className="tech-note">{v.job_summary}</div>
               )}
-              <div className="source-tag">Tech: {v.technician}</div>
+              <div className="source-tag">Technician: {v.technician}</div>
             </div>
           ))}
         </div>
@@ -194,17 +184,21 @@ export default function TodayScreen({ showToast, onNavigate }) {
 
       {activeList === 'renewals' && (
         <div>
-          <div className="section-header"><h2>Renewals in 30 Days</h2></div>
+          <div className="section-header"><h2>Renewals in 30 days</h2></div>
           {renewalContracts.length === 0 ? (
             <div className="empty-state"><p>No renewals due soon.</p></div>
           ) : renewalContracts.map(c => (
             <div key={c.id} className="card">
-              <div className="card-title">{c.client_name}</div>
-              <div className="card-sub">{c.contract_no}</div>
-              <div style={{ marginTop: 6 }}>
-                <span className="badge badge-warning">Renew by {c.renewal_reminder_date}</span>
+              <div className="card-row">
+                <div>
+                  <div className="card-title">{c.client_name}</div>
+                  <div className="card-sub">{c.contract_no}</div>
+                </div>
+                <div className="card-amount">{formatRs(c.contract_value)}</div>
               </div>
-              <div className="source-tag">Contract value: {formatRs(c.contract_value)}</div>
+              <div style={{ marginTop: 8 }}>
+                <span className="pill pill-quiet">Renew by {c.renewal_reminder_date}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -214,7 +208,7 @@ export default function TodayScreen({ showToast, onNavigate }) {
       {!activeList && visits.length > 0 && (
         <div>
           <div className="section-header">
-            <h2>Today's Visits</h2>
+            <h2>Today's visits</h2>
             <button className="btn btn-ghost btn-sm" onClick={() => setActiveList('visits')}>See all</button>
           </div>
           {visits.slice(0, 3).map(v => (
@@ -227,10 +221,10 @@ export default function TodayScreen({ showToast, onNavigate }) {
                 <StatusChip status={v.status} />
               </div>
               {v.status === 'pending_confirmation' && (
-                <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '.75rem', color: '#92400e' }}>Update awaiting confirmation</span>
-                  <button className="btn btn-success btn-sm" style={{ padding: '2px 8px', fontSize: '.75rem' }} disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}>
-                    ✓ Confirm
+                <div className="tech-note" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span>Update awaiting confirmation</span>
+                  <button className="btn btn-primary btn-sm" disabled={confirmingId === v.id} onClick={() => handleConfirmVisit(v.id)}>
+                    <Check size={16} aria-hidden="true" />Confirm
                   </button>
                 </div>
               )}
@@ -246,36 +240,41 @@ function plural(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }
 
-// A dashboard card is a real button: reachable by keyboard and announced by screen readers.
-function StatCard({ tone, value, label, detail, money, pressed, onClick }) {
+// A ledger row is a real button: reachable by keyboard and announced by screen readers.
+function LedgerRow({ value, label, detail, overdue, pressed, onClick }) {
   return (
-    <button
-      type="button"
-      className={`stat-card ${tone}`}
-      onClick={onClick}
-      aria-pressed={pressed === undefined ? undefined : pressed}
-      aria-label={`${label}: ${value}${detail ? ', ' + detail : ''}`}
-    >
-      <div className={`stat-value${money ? ' money' : ''}`}>{value}</div>
-      <div className="stat-label">{label}</div>
-      {detail && <div className="stat-detail">{detail}</div>}
-    </button>
+    <li>
+      <button
+        type="button"
+        className="ledger-row"
+        onClick={onClick}
+        aria-pressed={pressed === undefined ? undefined : pressed}
+        aria-label={`${label}: ${value}${detail ? ', ' + detail : ''}`}
+      >
+        <span>
+          <span className="ledger-label">{label}</span>
+          {detail && <span className="ledger-detail">{detail}</span>}
+        </span>
+        <span className={`ledger-amount money${overdue ? ' overdue' : ''}`}>{value}</span>
+        <ChevronRight size={18} className="chev" aria-hidden="true" />
+      </button>
+    </li>
   )
 }
 
 function StatusChip({ status }) {
   const map = {
-    done: ['chip chip-green', '✓ Done'],
-    scheduled: ['chip chip-blue', '⏳ Scheduled'],
-    pending_confirmation: ['chip chip-amber', '⏳ Pending Review'],
-    missed: ['chip chip-red', '✗ Missed'],
-    pending_review: ['chip chip-amber', '⚠ Review'],
-    confirmed: ['chip chip-green', '✓ Confirmed'],
-    overdue: ['chip chip-red', '⚠ Overdue'],
-    pending: ['chip chip-blue', '⏳ Pending'],
-    paid: ['chip chip-green', '✓ Paid'],
+    done: ['pill pill-quiet', 'Done'],
+    scheduled: ['pill pill-blue', 'Scheduled'],
+    pending_confirmation: ['pill pill-amber', 'Pending review'],
+    missed: ['pill pill-amber', 'Missed'],
+    pending_review: ['pill pill-amber', 'Review'],
+    confirmed: ['pill pill-blue', 'Confirmed'],
+    overdue: ['pill pill-red', 'Overdue'],
+    pending: ['pill pill-blue', 'Pending'],
+    paid: ['pill pill-blue', 'Paid'],
   }
-  const [cls, label] = map[status] || ['chip chip-gray', status]
+  const [cls, label] = map[status] || ['pill pill-quiet', status]
   return <span className={cls}>{label}</span>
 }
 

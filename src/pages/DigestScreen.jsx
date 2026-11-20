@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { fetchDigest } from '../api.js'
+import { Share2 } from 'lucide-react'
 import LoadError from '../components/LoadError.jsx'
 
 export default function DigestScreen({ showToast }) {
@@ -28,50 +29,47 @@ export default function DigestScreen({ showToast }) {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>Daily Digest</h2>
-      <p style={{ color: 'var(--gray-500)', fontSize: '.85rem', marginBottom: 16 }}>{today}</p>
+      <h2 className="page-title">Daily digest</h2>
+      <p className="page-sub">{today}</p>
 
       {digest && (
         <>
-          <div className="stat-grid" style={{ marginBottom: 16 }}>
-            <div className="stat-card success">
-              <div className="stat-value">{digest.visits_done ?? 0}</div>
-              <div className="stat-label">Visits done</div>
-            </div>
-            <div className="stat-card danger">
-              <div className="stat-value">{digest.visits_missed ?? 0}</div>
-              <div className="stat-label">Visits pending</div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span className="card-sub">Overdue payments</span>
-              <span style={{ fontWeight: 700, color: 'var(--danger)' }}>
-                Rs {Number(digest.overdue_amount || 0).toLocaleString('en-IN')}
-              </span>
-            </div>
+          <ul className="ledger" aria-label="Today's digest">
+            <li className="ledger-row" style={{ gridTemplateColumns: '1fr auto' }}>
+              <span className="ledger-label">Visits done</span>
+              <span className="ledger-amount money">{digest.visits_done ?? 0}</span>
+            </li>
+            <li className="ledger-row" style={{ gridTemplateColumns: '1fr auto' }}>
+              <span className="ledger-label">Visits pending</span>
+              <span className="ledger-amount money">{digest.visits_missed ?? 0}</span>
+            </li>
+            <li className="ledger-row" style={{ gridTemplateColumns: '1fr auto' }}>
+              <span className="ledger-label">Overdue payments</span>
+              <span className="ledger-amount money overdue">Rs {Number(digest.overdue_amount || 0).toLocaleString('en-IN')}</span>
+            </li>
             {digest.renewals?.length > 0 && (
-              <div>
-                <span className="card-sub">Renewals due soon:</span>
-                <div style={{ marginTop: 4 }}>
-                  {digest.renewals.map((r, i) => <span key={i} className="badge badge-warning" style={{ marginRight: 4 }}>{r}</span>)}
-                </div>
-              </div>
+              <li className="ledger-row" style={{ gridTemplateColumns: '1fr', minHeight: 0 }}>
+                <span>
+                  <span className="ledger-label">Renewals due soon</span>
+                  <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    {digest.renewals.map((r, i) => <span key={i} className="pill pill-quiet">{r}</span>)}
+                  </span>
+                </span>
+              </li>
             )}
-          </div>
+          </ul>
 
-          <div className="card" style={{ background: 'var(--gray-50)' }}>
-            <label className="label" style={{ marginBottom: 8 }}>Message preview</label>
-            <pre style={{ fontFamily: 'inherit', fontSize: '.85rem', whiteSpace: 'pre-wrap', color: 'var(--gray-700)', lineHeight: 1.6 }}>
+          <div className="card" style={{ marginTop: 16 }}>
+            <p className="label">Message preview</p>
+            <pre style={{ fontFamily: 'inherit', fontSize: '.9rem', whiteSpace: 'pre-wrap', color: 'var(--text)', lineHeight: 1.6 }}>
               {digest.digest}
             </pre>
           </div>
 
-          <button className="btn btn-success btn-full" style={{ marginTop: 8 }} disabled={!digest.digest} onClick={handleWhatsApp}>
-            📱 Share Digest on WhatsApp
+          <button className="btn btn-primary btn-full" disabled={!digest.digest} onClick={handleWhatsApp}>
+            <Share2 size={18} aria-hidden="true" />Share digest on WhatsApp
           </button>
-          <p style={{ fontSize: '.72rem', color: 'var(--gray-400)', textAlign: 'center', marginTop: 6 }}>
+          <p style={{ fontSize: '.8rem', color: 'var(--text-2)', textAlign: 'center', marginTop: 8 }}>
             Opens in your own WhatsApp to send to yourself
           </p>
         </>
