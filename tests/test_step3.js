@@ -61,7 +61,9 @@ async function runTests() {
   if (c2.end_date !== null) throw new Error(`C2 end_date expected null, got: ${c2.end_date}`)
   if (c2.renewal_reminder_date !== null) throw new Error(`C2 renewal expected null, got: ${c2.renewal_reminder_date}`)
   if (!c2.needs_review.some(f => f.includes('Only one date given'))) throw new Error(`C2 missing start date flag`)
-  if (!c2.needs_review.some(f => f.includes('end_date missing'))) throw new Error(`C2 missing end date / renewal flag`)
+  // The end-date flag may be Gemini's own note with our renewal remark merged in ("end_date is missing; renewal_reminder_date cannot be computed")
+  // or the code's note ("end_date missing; renewal_reminder_date cannot be computed."); either way it must mention both.
+  if (!c2.needs_review.some(f => /end[_ ]date (is )?missing/i.test(f) && /renewal/i.test(f))) throw new Error(`C2 missing end date / renewal flag`)
   console.log('   ✓ C2 extraction passed with start, end and renewal flags as expected!\n')
 
   // 3. Confirm and Save C1 and C2
