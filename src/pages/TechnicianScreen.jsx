@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchVisits, submitVoiceUpdate, submitVisitUpdate } from '../api.js'
 import LoadError from '../components/LoadError.jsx'
+import { STRINGS, loadLang, saveLang } from '../i18n/technician.js'
 
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return new Date().toLocaleDateString('en-CA') // local YYYY-MM-DD (UTC would be yesterday before 05:30 IST)
 }
 
 // Safari/iOS cannot record webm; pick the first format this browser supports.
@@ -28,6 +29,14 @@ export default function TechnicianScreen({ showToast }) {
   const chunksRef = useRef([])
   const discardRef = useRef(false) // set when leaving a visit mid-recording
   const photoInputRef = useRef()
+  const [lang, setLang] = useState(loadLang)
+  const t = STRINGS[lang]
+
+  function toggleLang() {
+    const next = lang === 'en' ? 'bn' : 'en'
+    setLang(next)
+    saveLang(next)
+  }
 
   async function load() {
     setLoading(true)
@@ -39,15 +48,15 @@ export default function TechnicianScreen({ showToast }) {
 
   async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      return showToast('This browser cannot record audio. Please open KAJ in Chrome or Safari.')
+      return showToast(t.noRecorder)
     }
     let stream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (e) {
       return showToast(e.name === 'NotAllowedError'
-        ? 'Microphone permission denied. Allow the microphone in your browser settings.'
-        : 'Could not start the microphone: ' + e.message)
+        ? t.micDenied
+        : t.micError + e.message)
     }
     try {
       const mime = pickAudioMime()
@@ -61,7 +70,7 @@ export default function TechnicianScreen({ showToast }) {
         const blob = new Blob(chunksRef.current, { type: (mr.mimeType || 'audio/webm').split(';')[0] })
         if (blob.size === 0) {
           setProcessing(false)
-          return showToast('Nothing was recorded. Please try again.')
+          return showToast(t.nothingRecorded)
         }
         await processAudio(blob)
       }
@@ -70,7 +79,7 @@ export default function TechnicianScreen({ showToast }) {
       setRecording(true)
     } catch (e) {
       stream.getTracks().forEach(t => t.stop())
-      showToast('Recording failed to start: ' + e.message)
+      showToast(t.recorderError + e.message)
     }
   }
 
@@ -89,7 +98,7 @@ export default function TechnicianScreen({ showToast }) {
       const { extracted: data } = await submitVoiceUpdate(activeVisit.id, blob, photo)
       setExtracted(data)
     } catch (e) {
-      showToast('Processing failed: ' + e.message, 4000)
+      showToast(t.processingFailed + e.message, 4000)
       setFailedBlob(blob) // keep the recording so the technician can retry without re-recording
     } finally {
       setProcessing(false)
@@ -118,9 +127,9 @@ export default function TechnicianScreen({ showToast }) {
     const file = e.target.files?.[0]
     e.target.value = '' // allow picking the same file again
     if (!file) return
-    if (!file.type.startsWith('image/')) return showToast('Please choose a photo.')
+    if (!file.type.startsWith('image/')) return showToast(t.choosePhoto)
     setPhoto(file)
-    showToast('Photo attached ✓')
+    showToast(t.photoAdded)
   }
 
   async function handleConfirm() {
@@ -137,170 +146,205 @@ export default function TechnicianScreen({ showToast }) {
         photo_ref: extracted.photo_ref,
         submitted_by: 'technician',
       })
-      showToast('Update submitted for owner review ✓')
+      showToast(t.submitted)
       leaveVisit()
       await load()
     } catch (e) {
-      showToast('Error: ' + e.message)
+      showToast(t.error + e.message)
     } finally {
       setConfirming(false)
     }
   }
 
+  const langToggle = (
+    <button type="button" className="btn btn-outline btn-sm lang-toggle" onClick={toggleLang}
+      aria-label={t.switchLabel} lang={lang === 'en' ? 'bn' : 'en'}>
+      {t.switchTo}
+    </button>
+  )
+
   // ── Visit list ─────────────────────────────────────────────────────────────
   if (!activeVisit) return (
-    <div>
-      <h2 style={{ marginBottom: 4 }}>Today's Visits</h2>
-      <p style={{ color: 'var(--gray-500)', fontSize: '.85rem', marginBottom: 16 }}>
-        {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-      </p>
+    <div lang={lang}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div>
+          <h2 style={{ marginBottom: 4 }}>{t.todaysVisits}</h2>
+          <p style={{ color: 'var(--gray-500)', fontSize: '.85rem', marginBottom: 16 }}>
+            {new Date().toLocaleDateString(t.dateLocale, { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
+        </div>
+        {langToggle}
+      </div>
 
-      {loading ? <div className="spinner" /> : loadError ? <LoadError message={loadError} onRetry={load} /> : (
+      {loading ? <div className="spinner" role="status" aria-label="Loading" /> : loadError ? <LoadError message={loadError} onRetry={load} /> : (
         visits.length === 0
-          ? <div className="empty-state"><p>No visits today.</p></div>
-          : visits.map(v => (
-            <div
-              key={v.id}
-              className={`visit-card ${v.status}`}
-              style={{ cursor: v.status === 'scheduled' ? 'pointer' : 'default' }}
-              onClick={() => v.status === 'scheduled' && setActiveVisit(v)}
-            >
-              <div className="card-row">
-                <div>
-                  <div className="card-title">{v.client_name}</div>
-                  <div className="card-sub">{v.site_address?.split(',')[0]}</div>
-                  <div className="card-sub" style={{ marginTop: 2 }}>
-                    {v.units?.map(u => `${u.quantity}× ${u.type}`).join(', ')}
+          ? <div className="empty-state"><p>{t.noVisits}</p></div>
+          : <ul className="plain-list">{visits.map(v => {
+            const openable = v.status === 'scheduled'
+            const body = (
+              <>
+                <div className="card-row">
+                  <div>
+                    <div className="card-title">{v.client_name}</div>
+                    <div className="card-sub">{v.site_address?.split(',')[0]}</div>
+                    <div className="card-sub" style={{ marginTop: 2 }}>
+                      {v.units?.map(u => `${u.quantity}× ${u.type}`).join(', ')}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    <StatusChip status={v.status} t={t} />
+                    {openable && (
+                      <span style={{ fontSize: '.75rem', color: 'var(--primary)', fontWeight: 600 }} aria-hidden="true">{t.open} →</span>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                  <StatusChip status={v.status} />
-                  {v.status === 'scheduled' && (
-                    <span style={{ fontSize: '.75rem', color: 'var(--primary)', fontWeight: 600 }}>Tap →</span>
-                  )}
-                </div>
-              </div>
-              {v.job_summary && (
-                <div style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--gray-600)', background: 'var(--gray-50)', borderRadius: 6, padding: '6px 8px' }}>
-                  {v.job_summary}
-                </div>
-              )}
-            </div>
-          ))
+                {v.job_summary && (
+                  <div lang="en" style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--gray-600)', background: 'var(--gray-50)', borderRadius: 6, padding: '6px 8px' }}>
+                    {v.job_summary}
+                  </div>
+                )}
+              </>
+            )
+            return (
+              <li key={v.id}>
+                {openable ? (
+                  <button type="button" className={`visit-card visit-card-btn ${v.status}`}
+                    aria-label={`${t.openVisit(v.client_name)}, ${t.status[v.status] || v.status}`}
+                    onClick={() => setActiveVisit(v)}>
+                    {body}
+                  </button>
+                ) : (
+                  <div className={`visit-card ${v.status}`}>{body}</div>
+                )}
+              </li>
+            )
+          })}</ul>
       )}
     </div>
   )
 
   // ── Active visit – recording ───────────────────────────────────────────────
   return (
-    <div>
+    <div lang={lang}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <button className="btn btn-outline btn-sm" onClick={leaveVisit}>← Back</button>
-        <div>
-          <div className="card-title">{activeVisit.client_name}</div>
+        <button type="button" className="btn btn-outline btn-sm" onClick={leaveVisit}>
+          <span aria-hidden="true">← </span>{t.back}
+        </button>
+        <div style={{ flex: 1 }}>
+          <h2 className="card-title" style={{ fontSize: '1rem' }}>{activeVisit.client_name}</h2>
           <div className="card-sub">{activeVisit.site_address?.split(',')[0]}</div>
         </div>
+        {langToggle}
       </div>
 
       {failedBlob && !processing && !extracted && (
         <div className="error-state" role="alert">
-          <p>The voice note could not be processed. Your recording is saved.</p>
+          <p>{t.failedSaved}</p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-            <button className="btn btn-primary btn-sm" onClick={() => processAudio(failedBlob)}>Try again</button>
-            <button className="btn btn-outline btn-sm" onClick={handleReRecord}>Re-record</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => processAudio(failedBlob)}>{t.tryAgain}</button>
+            <button type="button" className="btn btn-outline btn-sm" onClick={handleReRecord}>{t.reRecord}</button>
           </div>
         </div>
       )}
 
       {!processing && !extracted && !failedBlob && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 32, gap: 24 }}>
-          <p style={{ color: 'var(--gray-500)', fontSize: '.9rem', textAlign: 'center' }}>
-            {recording ? 'Recording… tap again to stop' : 'Tap the mic button to record your update'}
+          <p id="mic-hint" style={{ color: 'var(--gray-600)', fontSize: '.9rem', textAlign: 'center' }}>
+            {recording ? t.tapToStop : t.tapToRecord}
           </p>
 
           <button
+            type="button"
             className={`mic-btn${recording ? ' recording' : ''}`}
             onClick={recording ? stopRecording : startRecording}
+            aria-label={recording ? t.stopRecording : t.startRecording}
+            aria-pressed={recording}
+            aria-describedby="mic-hint"
           >
             {recording ? <StopIcon /> : <MicIcon />}
           </button>
 
-          {recording && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--danger)', fontSize: '.85rem', fontWeight: 600 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--danger)', animation: 'pulse 1s infinite' }} />
-              Recording…
-            </div>
-          )}
+          <div role="status" aria-live="polite" style={{ minHeight: 20 }}>
+            {recording && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--danger)', fontSize: '.85rem', fontWeight: 600 }}>
+                <span className="rec-dot" aria-hidden="true" />
+                {t.recording}
+              </div>
+            )}
+          </div>
 
           {photo ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '.85rem' }}>
-              <span className="chip chip-green">📷 {photo.name || 'Photo'} attached</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => setPhoto(null)}>Remove</button>
+              <span className="chip chip-green"><span aria-hidden="true">📷 </span>{t.photoAttached(photo.name)}</span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPhoto(null)} aria-label={t.removePhoto}>{t.remove}</button>
             </div>
           ) : (
-            <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} disabled={recording} onClick={() => photoInputRef.current?.click()}>
-              📷 Add Photo
+            <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} disabled={recording} onClick={() => photoInputRef.current?.click()}>
+              <span aria-hidden="true">📷 </span>{t.addPhoto}
             </button>
           )}
-          <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhoto} />
+          <input ref={photoInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handlePhoto} aria-label={t.addPhoto} />
         </div>
       )}
 
       {processing && (
-        <div className="loading-screen">
-          <div className="spinner" />
-          <p>Processing voice note with AI…</p>
+        <div className="loading-screen" role="status" aria-live="polite">
+          <div className="spinner" aria-hidden="true" />
+          <p>{t.processing}</p>
         </div>
       )}
 
       {extracted && !processing && (
         <div>
           {extracted.needs_review?.length > 0 && (
-            <div className="review-strip">
-              <h3>⚠️ Needs review</h3>
-              <ul>
+            <div className="review-strip" role="region" aria-label={t.needsReview}>
+              <h3><span aria-hidden="true">⚠️ </span>{t.needsReview}</h3>
+              <ul lang="en">
                 {extracted.needs_review.map((n, i) => <li key={i}>{n}</li>)}
               </ul>
             </div>
           )}
 
           <div className="card">
-            <h3 style={{ marginBottom: 10 }}>Job Summary</h3>
-            <p style={{ fontSize: '.9rem', color: 'var(--gray-700)', lineHeight: 1.6 }}>
-              {extracted.summary_english || '(No summary extracted)'}
+            <h3 style={{ marginBottom: 10 }}>{t.jobSummary}</h3>
+            <p lang="en" style={{ fontSize: '.9rem', color: 'var(--gray-700)', lineHeight: 1.6 }}>
+              {extracted.summary_english || t.noSummary}
             </p>
+            {lang === 'bn' && extracted.summary_english && (
+              <p style={{ fontSize: '.75rem', color: 'var(--gray-500)', marginTop: 4 }}>{t.summaryEnglishNote}</p>
+            )}
             {extracted.units_serviced?.length > 0 && (
               <div style={{ marginTop: 10 }}>
-                <label className="label">Units serviced</label>
+                <h4 className="label">{t.unitsServiced}</h4>
                 {extracted.units_serviced.map((u, i) => (
-                  <span key={i} className="chip chip-green" style={{ marginRight: 4 }}>{u.quantity} {u.type}</span>
+                  <span key={i} className="chip chip-green" style={{ marginRight: 4 }}>{u.quantity ?? '?'} {u.type}</span>
                 ))}
               </div>
             )}
             {extracted.units_pending?.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                <label className="label">Units pending</label>
+                <h4 className="label">{t.unitsPending}</h4>
                 {extracted.units_pending.map((u, i) => (
-                  <span key={i} className="chip chip-amber" style={{ marginRight: 4 }}>{u.quantity} {u.type}</span>
+                  <span key={i} className="chip chip-amber" style={{ marginRight: 4 }}>{u.quantity ?? '?'} {u.type}</span>
                 ))}
               </div>
             )}
             {extracted.extra_work?.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                <label className="label">Extra work (draft bill)</label>
+                <h4 className="label">{t.extraWork}</h4>
                 {extracted.extra_work.map((e, i) => (
-                  <span key={i} className="chip chip-blue" style={{ marginRight: 4 }}>{e.quantity} × {e.item}</span>
+                  <span key={i} className="chip chip-blue" style={{ marginRight: 4 }}>{e.quantity ?? '?'} × {e.item}</span>
                 ))}
               </div>
             )}
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <button className="btn btn-outline" style={{ flex: 1 }} onClick={handleReRecord}>
-              🔁 Re-record
+            <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={handleReRecord}>
+              <span aria-hidden="true">🔁 </span>{t.reRecord}
             </button>
-            <button className="btn btn-success" style={{ flex: 2 }} disabled={confirming} onClick={handleConfirm}>
-              {confirming ? 'Confirming…' : '✓ Confirm'}
+            <button type="button" className="btn btn-success" style={{ flex: 2 }} disabled={confirming} onClick={handleConfirm}>
+              {confirming ? t.confirming : <><span aria-hidden="true">✓ </span>{t.confirm}</>}
             </button>
           </div>
         </div>
@@ -311,7 +355,7 @@ export default function TechnicianScreen({ showToast }) {
 
 function MicIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
       <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
       <line x1="12" y1="19" x2="12" y2="23"/>
@@ -322,19 +366,19 @@ function MicIcon() {
 
 function StopIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
       <rect x="6" y="6" width="12" height="12" rx="2"/>
     </svg>
   )
 }
 
-function StatusChip({ status }) {
+function StatusChip({ status, t }) {
   const map = {
-    done: ['chip chip-green', '✓ Done'],
-    scheduled: ['chip chip-blue', '⏳ Scheduled'],
-    pending_confirmation: ['chip chip-amber', '⏳ Pending Review'],
-    missed: ['chip chip-red', '✗ Missed'],
+    done: ['chip chip-green', '✓'],
+    scheduled: ['chip chip-blue', '⏳'],
+    pending_confirmation: ['chip chip-amber', '⏳'],
+    missed: ['chip chip-red', '✗'],
   }
-  const [cls, label] = map[status] || ['chip chip-gray', status]
-  return <span className={cls}>{label}</span>
+  const [cls, icon] = map[status] || ['chip chip-gray', '']
+  return <span className={cls}>{icon && <span aria-hidden="true">{icon} </span>}{t.status[status] || status}</span>
 }

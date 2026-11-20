@@ -8,7 +8,7 @@ function formatRs(n) {
 }
 
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return new Date().toLocaleDateString('en-CA') // local YYYY-MM-DD (UTC would be yesterday before 05:30 IST)
 }
 
 export default function TodayScreen({ showToast, onNavigate }) {
@@ -73,7 +73,7 @@ export default function TodayScreen({ showToast, onNavigate }) {
 
   const todayStr = today()
   const in30 = new Date(); in30.setDate(in30.getDate() + 30)
-  const in30Str = in30.toISOString().split('T')[0]
+  const in30Str = in30.toLocaleDateString('en-CA')
   const renewalContracts = contracts.filter(c => c.renewal_reminder_date && c.renewal_reminder_date >= todayStr && c.renewal_reminder_date <= in30Str)
 
   return (
@@ -111,23 +111,47 @@ export default function TodayScreen({ showToast, onNavigate }) {
 
       {/* Stat cards */}
       <div className="stat-grid">
-        <div className="stat-card primary" onClick={() => setActiveList(activeList === 'visits' ? null : 'visits')}>
-          <div className="stat-value">{stats?.visits_today ?? 0}</div>
-          <div className="stat-label">Visits today</div>
-        </div>
-        <div className="stat-card warning" onClick={() => onNavigate?.('bills')}>
-          <div className="stat-value">{stats?.unbilled_extras ?? 0}</div>
-          <div className="stat-label">Unbilled extras</div>
-        </div>
-        <div className="stat-card danger" onClick={() => onNavigate?.('bills')}>
-          <div className="stat-value">{formatRs(stats?.overdue_total)}</div>
-          <div className="stat-label">Overdue payments</div>
-        </div>
-        <div className="stat-card success" onClick={() => setActiveList(activeList === 'renewals' ? null : 'renewals')}>
-          <div className="stat-value">{stats?.renewals_next_30 ?? 0}</div>
-          <div className="stat-label">Renewals in 30 days</div>
-        </div>
+        <StatCard
+          tone="primary"
+          value={stats?.visits_today ?? 0}
+          label="Visits today"
+          detail={pendingVisits.length ? `${pendingVisits.length} awaiting confirmation` : null}
+          pressed={activeList === 'visits'}
+          onClick={() => setActiveList(activeList === 'visits' ? null : 'visits')}
+        />
+        <StatCard
+          tone="warning"
+          money
+          value={formatRs(stats?.unbilled_extras_total ?? 0)}
+          label="Unbilled extras"
+          detail={[
+            plural(stats?.unbilled_extras ?? 0, 'bill line'),
+            stats?.unbilled_extras_unpriced ? `${stats.unbilled_extras_unpriced} need a price` : null,
+          ].filter(Boolean).join(' · ')}
+          onClick={() => onNavigate?.('bills')}
+        />
+        <StatCard
+          tone="danger"
+          money
+          value={formatRs(stats?.overdue_total ?? 0)}
+          label="Overdue payments"
+          detail={plural(stats?.overdue_count ?? 0, 'invoice')}
+          onClick={() => onNavigate?.('bills')}
+        />
+        <StatCard
+          tone="success"
+          money
+          value={formatRs(stats?.renewals_value_total ?? 0)}
+          label="Renewals in 30 days"
+          detail={[
+            plural(stats?.renewals_next_30 ?? 0, 'contract'),
+            stats?.renewals_unvalued ? `${stats.renewals_unvalued} without value` : null,
+          ].filter(Boolean).join(' · ')}
+          pressed={activeList === 'renewals'}
+          onClick={() => setActiveList(activeList === 'renewals' ? null : 'renewals')}
+        />
       </div>
+      <p className="stat-footnote">Amounts are before GST.</p>
 
       {/* Expandable lists */}
       {activeList === 'visits' && (
@@ -215,6 +239,27 @@ export default function TodayScreen({ showToast, onNavigate }) {
         </div>
       )}
     </div>
+  )
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
+// A dashboard card is a real button: reachable by keyboard and announced by screen readers.
+function StatCard({ tone, value, label, detail, money, pressed, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`stat-card ${tone}`}
+      onClick={onClick}
+      aria-pressed={pressed === undefined ? undefined : pressed}
+      aria-label={`${label}: ${value}${detail ? ', ' + detail : ''}`}
+    >
+      <div className={`stat-value${money ? ' money' : ''}`}>{value}</div>
+      <div className="stat-label">{label}</div>
+      {detail && <div className="stat-detail">{detail}</div>}
+    </button>
   )
 }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchContracts, extractContractText, extractContractFile, confirmContract, editContractField } from '../api.js'
 import LoadError from '../components/LoadError.jsx'
+import useEscape from '../components/useEscape.js'
 
 // Turn the edit box's text into the type the field stores; empty means null.
 function coerceFieldValue(key, raw) {
@@ -42,6 +43,7 @@ export default function ContractsScreen({ showToast }) {
   const [saving, setSaving] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef()
+  useEscape(() => setEditField(null), Boolean(editField) && !saving)
 
   const [loadError, setLoadError] = useState(null)
 
@@ -148,8 +150,8 @@ export default function ContractsScreen({ showToast }) {
         contracts.length === 0
           ? <div className="empty-state"><p>No contracts yet. Add one above.</p></div>
           : contracts.map(c => (
-            <div key={c.id} className="card" onClick={() => { setSelectedContract(c); setView('detail') }}
-              style={{ cursor: 'pointer' }}>
+            <button type="button" key={c.id} className="card card-btn" onClick={() => { setSelectedContract(c); setView('detail') }}
+              aria-label={`Open contract ${c.contract_no || ''} for ${c.client_name || 'unknown client'}${c.needs_review?.length ? `, ${c.needs_review.length} flags` : ''}`}>
               <div className="card-row">
                 <div style={{ flex: 1 }}>
                   <div className="card-title">{c.client_name}</div>
@@ -164,8 +166,8 @@ export default function ContractsScreen({ showToast }) {
                   <div className="card-sub">{c.gst_extra ? '+GST' : 'incl. GST'}</div>
                 </div>
               </div>
-              <div className="source-tag">📎 {c.source_ref}</div>
-            </div>
+              <div className="source-tag"><span aria-hidden="true">📎 </span>{c.original_filename || c.source_ref}</div>
+            </button>
           ))
       )}
     </div>
@@ -179,34 +181,39 @@ export default function ContractsScreen({ showToast }) {
         <h2>Add Contract</h2>
       </div>
 
-      <div className="tabs">
-        <button className={`tab${addMode === 'upload' ? ' active' : ''}`} onClick={() => setAddMode('upload')}>📷 Upload</button>
-        <button className={`tab${addMode === 'paste' ? ' active' : ''}`} onClick={() => setAddMode('paste')}>📋 Paste text</button>
+      <div className="tabs" role="tablist" aria-label="How to add the contract">
+        <button type="button" role="tab" aria-selected={addMode === 'upload'} className={`tab${addMode === 'upload' ? ' active' : ''}`} onClick={() => setAddMode('upload')}><span aria-hidden="true">📷 </span>Upload</button>
+        <button type="button" role="tab" aria-selected={addMode === 'paste'} className={`tab${addMode === 'paste' ? ' active' : ''}`} onClick={() => setAddMode('paste')}><span aria-hidden="true">📋 </span>Paste text</button>
       </div>
 
       {addMode === 'upload' && (
         <div
           className={`upload-zone${dragOver ? ' drag-over' : ''}`}
+          role="button"
+          tabIndex={0}
+          aria-label="Upload a contract photo or PDF"
           onClick={() => fileRef.current?.click()}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click() } }}
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]) }}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" focusable="false">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <p><strong>Tap to upload</strong> or drag and drop</p>
           <p style={{ fontSize: '.8rem', marginTop: 4 }}>Photo, PDF, or scan of contract</p>
-          <input ref={fileRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
+          <input ref={fileRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true"
             onChange={e => handleFile(e.target.files[0])} />
         </div>
       )}
 
       {addMode === 'paste' && (
         <div>
-          <label className="label">Contract text</label>
+          <label className="label" htmlFor="contract-text">Contract text</label>
           <textarea
+            id="contract-text"
             className="input"
             rows={8}
             placeholder="Paste the contract text here…"
@@ -224,7 +231,7 @@ export default function ContractsScreen({ showToast }) {
 
   // ── Extracting ─────────────────────────────────────────────────────────────
   if (view === 'extract') return (
-    <div className="loading-screen">
+    <div className="loading-screen" role="status" aria-live="polite">
       <div className="spinner" />
       <p>Extracting contract details with AI…</p>
       <p style={{ fontSize: '.8rem', color: 'var(--gray-400)' }}>This may take a few seconds</p>
@@ -316,11 +323,14 @@ export default function ContractsScreen({ showToast }) {
 
         {/* Edit field modal */}
         {editField && (
-          <div className="modal-overlay" onClick={() => setEditField(null)}>
-            <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+          <div className="modal-overlay" onClick={() => !saving && setEditField(null)}>
+            <div className="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="edit-field-title" onClick={e => e.stopPropagation()}>
               <div className="modal-handle" />
-              <h3 style={{ marginBottom: 12 }}>Edit: {editField.key}</h3>
+              <h3 id="edit-field-title" style={{ marginBottom: 12 }}>Edit {EDITABLE_FIELDS[editField.key] || editField.key}</h3>
               <input
+                autoFocus
+                aria-labelledby="edit-field-title"
+                onKeyDown={e => { if (e.key === 'Enter') handleEditSave() }}
                 className="input"
                 value={editField.value ?? ''}
                 onChange={e => setEditField(f => ({ ...f, value: e.target.value }))}

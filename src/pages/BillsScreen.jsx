@@ -9,6 +9,7 @@ import {
   setExtraPrice
 } from '../api.js'
 import LoadError from '../components/LoadError.jsx'
+import useEscape from '../components/useEscape.js'
 
 function formatRs(n) {
   if (!n && n !== 0) return '—'
@@ -27,6 +28,7 @@ export default function BillsScreen({ showToast }) {
   const [loadError, setLoadError] = useState(null)
   const [busyId, setBusyId] = useState(null) // invoice currently being marked paid / priced
   const [sending, setSending] = useState(false)
+  useEscape(() => closeReminder(), Boolean(reminderModal) && !approving && !sending)
 
   async function load() {
     setLoading(true)
@@ -195,11 +197,11 @@ export default function BillsScreen({ showToast }) {
                         <div style={{ marginTop: 4 }}>
                           <span className="badge badge-warning">⚠ Not on rate card — Owner price required</span>
                         </div>
-                      ) : (
+                      ) : extra.unit_price != null ? (
                         <div style={{ marginTop: 4 }}>
                           <span className="badge badge-primary">Rate: {formatRs(extra.unit_price)}/unit</span>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div className="card-amount" style={{ color: extra.amount ? 'var(--primary)' : 'var(--accent)' }}>
@@ -215,6 +217,9 @@ export default function BillsScreen({ showToast }) {
                         <>
                           <input
                             type="number"
+                            min="1"
+                            inputMode="numeric"
+                            aria-label={`Price in rupees for ${extra.item || extra.description}`}
                             className="input"
                             style={{ width: 120, padding: '4px 8px', fontSize: '.85rem' }}
                             placeholder="Price in Rs"
@@ -268,12 +273,12 @@ export default function BillsScreen({ showToast }) {
       {/* Reminder modal */}
       {reminderModal && (
         <div className="modal-overlay" onClick={() => { if (!approving && !sending) closeReminder() }}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+          <div className="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="reminder-title" onClick={e => e.stopPropagation()}>
             <div className="modal-handle" />
-            <h3 style={{ marginBottom: 4 }}>Payment Reminder</h3>
+            <h3 id="reminder-title" style={{ marginBottom: 4 }}>Payment Reminder</h3>
             <p style={{ fontSize: '.8rem', color: 'var(--gray-500)', marginBottom: 14 }}>{reminderModal.client_name} · {reminderModal.invoice_no}</p>
 
-            {draftLoading && <div style={{ textAlign: 'center', padding: 24 }}><div className="spinner" /><p style={{ marginTop: 8 }}>Drafting with AI…</p></div>}
+            {draftLoading && <div role="status" aria-live="polite" style={{ textAlign: 'center', padding: 24 }}><div className="spinner" /><p style={{ marginTop: 8 }}>Drafting with AI…</p></div>}
 
             {draftData && !draftLoading && (
               <>
