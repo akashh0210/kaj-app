@@ -127,7 +127,7 @@ Or build once and let Express serve everything: `npm run build && node server.js
 | Command | What it checks |
 |---------|----------------|
 | `NODE_ENV=test node tests/test_step6_live.js` | **Live Gemini** contract extraction of C1 and C2 through the real upload route, scored against `AnswerKey.csv`; also checks upload names are unique |
-| `NODE_ENV=test node tests/test_step6_live.js "demo-data/C3_photo.jpeg=C4"` | Same, plus a contract photo (the photo shows the C4 contract) |
+| `NODE_ENV=test node tests/test_step6_live.js "demo-data/KAJ_Demo_Data/C4_photo.jpeg=C4"` | Same, plus a contract photo (hand-copied C4 contract, photographed) |
 | `NODE_ENV=test node tests/test_voice_live.js` | **Live Gemini** voice extraction of `v1.ogg`–`v5.ogg`, scored against the V rows of `AnswerKey.csv` |
 | `node tests/test_step3.js`, `test_step4.js`, `test_step5.js` | Earlier step tests (extraction, visit confirmation, rate-card billing) |
 

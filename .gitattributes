@@ -1,0 +1,7 @@
+# Shell scripts must keep LF endings to run in bash / Cloud Shell
+*.sh text eol=lf
+# Demo binaries
+*.jpeg binary
+*.jpg binary
+*.ogg binary
+*.pdf binary
