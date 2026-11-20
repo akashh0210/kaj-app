@@ -1,44 +1,45 @@
 #!/usr/bin/env bash
-# deploy.sh – Build and deploy KAJ to Cloud Run
-# Prerequisites: gcloud CLI installed and authenticated, Docker available.
+# deploy.sh – Build from source and deploy the KAJ demo to Cloud Run (Gemini on Vertex AI).
+# Prerequisites: gcloud CLI, logged in, project with Cloud Run, Cloud Build, Artifact Registry
+# and Vertex AI (aiplatform.googleapis.com) enabled. No API key is needed: the Cloud Run
+# service account calls Vertex AI and needs roles/aiplatform.user (and roles/run.builder
+# for source builds in new projects).
+#
 # Usage: ./deploy.sh [PROJECT_ID] [REGION]
+# Optional env: GEMINI_MODEL, GEMINI_FALLBACK_MODEL, GOOGLE_CLOUD_LOCATION, TENANT_ID
 set -euo pipefail
 
-PROJECT_ID="${1:-$(gcloud config get-value project)}"
+PROJECT_ID="${1:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${2:-asia-south1}"
-SERVICE_NAME="kaj-app"
-IMAGE="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
+SERVICE_NAME="kaj"
 
-echo "🏗  Building Docker image: ${IMAGE}"
-gcloud builds submit --tag "${IMAGE}" .
+# Env vars go through a temporary file that is always deleted.
+ENV_FILE="$(mktemp)"
+trap 'rm -f "$ENV_FILE"' EXIT
+cat > "$ENV_FILE" <<EOF
+GEMINI_USE_VERTEX: "true"
+GOOGLE_CLOUD_PROJECT: "${PROJECT_ID}"
+GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
+GEMINI_MODEL: "${GEMINI_MODEL:-gemini-4-hydrogen}"
+GEMINI_FALLBACK_MODEL: "${GEMINI_FALLBACK_MODEL:-gemini-3.8-flash}"
+KAJ_STORE: "local"
+TENANT_ID: "${TENANT_ID:-das-cooling-services}"
+EOF
 
-echo "🚀 Deploying to Cloud Run (region: ${REGION})"
+# Demo setup: in-memory local store seeded on start. One instance that never scales to zero,
+# so data people add persists while they try the app (lost on redeploy or restart).
+echo "Deploying ${SERVICE_NAME} to Cloud Run (project: ${PROJECT_ID}, region: ${REGION})"
 gcloud run deploy "${SERVICE_NAME}" \
-  --image "${IMAGE}" \
-  --platform managed \
+  --project "${PROJECT_ID}" \
+  --source . \
   --region "${REGION}" \
   --allow-unauthenticated \
-  --port 8080 \
+  --min-instances 1 \
+  --max-instances 1 \
   --memory 512Mi \
-  --cpu 1 \
-  --min-instances 0 \
-  --max-instances 5 \
-  --set-env-vars "NODE_ENV=production" \
-  --set-env-vars "TENANT_ID=${TENANT_ID:-das-cooling-services}" \
-  --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest" \
-  --set-secrets "FIREBASE_PROJECT_ID=FIREBASE_PROJECT_ID:latest" \
-  --set-secrets "FIREBASE_CLIENT_EMAIL=FIREBASE_CLIENT_EMAIL:latest" \
-  --set-secrets "FIREBASE_PRIVATE_KEY=FIREBASE_PRIVATE_KEY:latest"
+  --env-vars-file "${ENV_FILE}" \
+  --quiet
 
-URL=$(gcloud run services describe "${SERVICE_NAME}" \
-  --platform managed \
-  --region "${REGION}" \
-  --format 'value(status.url)')
-
+URL=$(gcloud run services describe "${SERVICE_NAME}" --project "${PROJECT_ID}" --region "${REGION}" --format 'value(status.url)')
 echo ""
-echo "✅ Deployed! KAJ is live at: ${URL}"
-echo ""
-echo "Next steps:"
-echo "  1. Set the VITE_ env vars in .env and rebuild for the client-side Firebase config."
-echo "  2. Run 'npm run seed' once to seed Firestore with demo data."
-echo "  3. Visit ${URL}"
+echo "KAJ is live at: ${URL}"
