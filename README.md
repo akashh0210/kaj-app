@@ -247,6 +247,13 @@ One-time project setup:
 On start the container runs `scripts/seed-if-empty.js` (seeds demo data into an empty local store),
 then the server.
 
+**Fresh seed for a new day** (new revision → new container → demo data dated today, India time; anything added on the site is cleared):
+
+```powershell
+gcloud run services update kaj --region asia-south1 --project kaj-app-515307 --update-env-vars "RESTARTED_AT=$(Get-Date -Format yyyyMMdd-HHmm)"
+```
+In bash use `$(date +%Y%m%d-%H%M)`.
+
 ### Demo vs production
 
 | | Demo (live URL) | Production (planned) |
