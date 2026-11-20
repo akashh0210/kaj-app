@@ -11,6 +11,7 @@ import multer from 'multer'
 import { initDb, getTenantCollection } from './db.js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import fs from 'fs'
+import crypto from 'crypto'
 import { execFileSync } from 'child_process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -25,7 +26,8 @@ const { db, Timestamp } = await initDb()
 // ── Gemini ───────────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 const MODEL_PRIMARY = process.env.GEMINI_MODEL || 'gemini-4-hydrogen'
-const MODEL_FALLBACK = 'gemini-4-carbon'
+// Second model for the "too many flags" retry. If unset, the retry is skipped.
+const MODEL_FALLBACK = process.env.GEMINI_FALLBACK_MODEL || null
 
 function geminiClient() {
   if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not set')
@@ -282,8 +284,16 @@ async function extractContractWithModel(modelName, content, mimeType) {
 
   const result = await model.generateContent(parts)
   const text = result.response.text()
-  return JSON.parse(text)
+  const parsed = JSON.parse(text)
+  if (!Array.isArray(parsed.needs_review)) parsed.needs_review = []
+  parsed.extraction_method = `gemini:${modelName}`
+  return parsed
 }
+
+const AI_FAILED_NOTE = 'AI extraction failed; please check all fields'
+const NO_FIELDS_NOTE = 'Extraction failed: no contract fields could be read from this file. Please re-upload a clearer copy or enter the contract by hand.'
+// Core fields: if every one of these is empty, nothing useful was read.
+const CORE_FIELDS = ['contract_no', 'client_name', 'start_date', 'end_date', 'visit_frequency', 'contract_value']
 
 async function extractContract(content, mimeType, rawText = '') {
   let parsed = null
@@ -291,21 +301,35 @@ async function extractContract(content, mimeType, rawText = '') {
   if (GEMINI_API_KEY) {
     try {
       parsed = await extractContractWithModel(MODEL_PRIMARY, content, mimeType)
-      if (parsed.needs_review && parsed.needs_review.length > 2) {
+      if (MODEL_FALLBACK && parsed.needs_review.length > 2) {
         try {
-          const fallback = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
-          if (fallback.needs_review.length < parsed.needs_review.length) {
-            parsed = fallback
+          const retry = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
+          if (retry.needs_review.length < parsed.needs_review.length) {
+            parsed = retry
           }
-        } catch (_) {}
+        } catch (e) {
+          console.warn(`Gemini retry with ${MODEL_FALLBACK} failed:`, e.message)
+        }
       }
     } catch (e) {
+      // e.message from the SDK does not include the API key
       console.warn('Gemini extraction failed, falling back to rule-based parser:', e.message)
     }
   }
 
   if (!parsed) {
     parsed = parseContractText(rawText || (mimeType === 'text/plain' ? content : ''))
+    parsed.extraction_method = 'fallback_parser'
+    parsed.needs_review.unshift(AI_FAILED_NOTE)
+  }
+
+  // A photo/PDF that yields no core fields is a failed extraction, not an empty record.
+  const nothingRead = CORE_FIELDS.every(f => parsed[f] === null || parsed[f] === undefined || parsed[f] === '')
+  if (nothingRead) {
+    parsed.extraction_failed = true
+    parsed.needs_review.unshift(NO_FIELDS_NOTE)
+  } else {
+    parsed.extraction_failed = false
   }
 
   // Code-computed fields (not AI)
@@ -370,14 +394,18 @@ app.post('/api/contracts/extract', upload.single('file'), async (req, res) => {
     let content, mimeType, rawText = ''
     let sourceRef = 'pasted-text'
     let sourceUrl = null
+    let originalFilename = null
 
     if (req.file) {
-      sourceRef = req.file.originalname
-      // Persist uploaded file so source link works
-      const targetPath = path.join(UPLOADS_DIR, req.file.originalname)
+      // Persist uploaded file under a unique name so source links never get overwritten
+      const safeName = path.basename(req.file.originalname).replace(/[^\w.\-]+/g, '_')
+      const storedName = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}-${safeName}`
+      const targetPath = path.join(UPLOADS_DIR, storedName)
       fs.copyFileSync(req.file.path, targetPath)
       fs.unlinkSync(req.file.path)
-      sourceUrl = `/uploads/${encodeURIComponent(req.file.originalname)}`
+      sourceRef = storedName
+      originalFilename = req.file.originalname
+      sourceUrl = `/uploads/${encodeURIComponent(storedName)}`
 
       const buffer = fs.readFileSync(targetPath)
       content = buffer.toString('base64')
@@ -398,7 +426,8 @@ app.post('/api/contracts/extract', upload.single('file'), async (req, res) => {
     extracted.tenant_id = tenantId
     extracted.source_ref = sourceRef
     extracted.source_url = sourceUrl
-    extracted.status = 'pending_review'
+    extracted.original_filename = originalFilename
+    extracted.status = extracted.extraction_failed ? 'extraction_failed' : 'pending_review'
     extracted.created_at = Timestamp.now()
 
     res.json({ extracted })
@@ -412,6 +441,10 @@ app.post('/api/contracts', async (req, res) => {
   try {
     const tenantId = getTenantId(req)
     const data = req.body
+    // Guardrail: never save a failed extraction as an empty contract
+    if (CORE_FIELDS.every(f => data[f] === null || data[f] === undefined || data[f] === '')) {
+      return res.status(400).json({ error: 'No contract fields to save; extraction failed.' })
+    }
     // Guardrail: validate dates are real
     for (const field of ['start_date', 'end_date', 'renewal_reminder_date']) {
       if (data[field] && isNaN(Date.parse(data[field]))) {

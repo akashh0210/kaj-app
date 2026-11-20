@@ -204,6 +204,8 @@ export default function ContractsScreen({ showToast }) {
         <h2>Review Extracted Data</h2>
       </div>
 
+      <ExtractionBadge method={extracted.extraction_method} />
+
       {extracted.needs_review?.length > 0 && (
         <div className="review-strip">
           <h3>⚠️ Needs review</h3>
@@ -232,8 +234,8 @@ export default function ContractsScreen({ showToast }) {
         <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setView('add')}>
           Re-extract
         </button>
-        <button className="btn btn-success" style={{ flex: 2 }} disabled={saving} onClick={handleConfirm}>
-          {saving ? 'Saving…' : '✓ Confirm & Save'}
+        <button className="btn btn-success" style={{ flex: 2 }} disabled={saving || extracted.extraction_failed} onClick={handleConfirm}>
+          {extracted.extraction_failed ? 'Extraction failed' : saving ? 'Saving…' : '✓ Confirm & Save'}
         </button>
       </div>
     </div>
@@ -248,6 +250,8 @@ export default function ContractsScreen({ showToast }) {
           <button className="btn btn-outline btn-sm" onClick={() => setView('list')}>← Back</button>
           <h2 style={{ flex: 1 }}>{c.client_name}</h2>
         </div>
+
+        <ExtractionBadge method={c.extraction_method} />
 
         {c.needs_review?.length > 0 && (
           <div className="review-strip">
@@ -300,6 +304,27 @@ export default function ContractsScreen({ showToast }) {
   }
 
   return null
+}
+
+// "gemini:gemini-4-hydrogen" -> "Read by Gemini 4 Hydrogen"
+function extractionLabel(method) {
+  if (!method) return null
+  if (method === 'fallback_parser') return 'Read by backup parser (AI failed)'
+  if (method.startsWith('gemini:')) {
+    const name = method.slice('gemini:'.length)
+      .split('-')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ')
+    return `Read by ${name}`
+  }
+  return `Read by ${method}`
+}
+
+function ExtractionBadge({ method }) {
+  const label = extractionLabel(method)
+  if (!label) return null
+  const cls = method === 'fallback_parser' ? 'badge badge-warning' : 'badge badge-gray'
+  return <div style={{ marginBottom: 10 }}><span className={cls} title={method}>{label}</span></div>
 }
 
 const EDITABLE_FIELDS = {
