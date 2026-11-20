@@ -1,5 +1,5 @@
 // Live voice-note test: real Gemini calls (no mocks) through POST /api/visits/:id/voice-update.
-// Run with:  NODE_ENV=test node tests/test_voice_live.js
+// Run with:  NODE_ENV=test node tests/test_voice_live.js [V1 V2 ...]
 // Reads visits only; does not write to the database. Never prints the API key.
 import fs from 'fs'
 import path from 'path'
@@ -84,7 +84,9 @@ async function main() {
   const base = `http://127.0.0.1:${server.address().port}`
   let pass = 0, totalRows = 0
   try {
-    for (const c of CASES) {
+    // Optional args pick notes, e.g. `node tests/test_voice_live.js V4 V5`
+    const only = process.argv.slice(2).map(a => a.toUpperCase())
+    for (const c of CASES.filter(c => !only.length || only.includes(c.key))) {
       const form = new FormData()
       form.append('audio', new Blob([fs.readFileSync(path.join(DATA, c.file))], { type: 'audio/ogg' }), c.file)
       const res = await fetch(`${base}/api/visits/${c.visit}/voice-update`, {
