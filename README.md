@@ -31,17 +31,32 @@ Switch roles with the toggle in the top bar (demo mode, no login).
 | | |
 |---|---|
 | Access | **Vertex AI** (`GEMINI_USE_VERTEX=true`), location `global`, Application Default Credentials. No API key: on Cloud Run the service account has `roles/aiplatform.user`. An API-key mode (`GEMINI_API_KEY`) is still supported. |
-| Main model | **`gemini-4-hydrogen`**: contracts (PDF, photo or text) and voice notes, with structured JSON output (`responseSchema`). |
-| Second model | **`gemini-3.8-flash`**: (1) a second opinion when the main model flags more than 2 fields: the two answers are compared field by field, the main model's values are kept, and every field where they differ is flagged "Two AI models disagreed; please check"; (2) a stand-in when the main model is overloaded or out of quota. |
+| Main model | **`gemini-3.8-flash`** reads first: contracts (PDF, photo or text) and voice notes, with structured JSON output (`responseSchema`). Same accuracy as Hydrogen on the test files and about 8× faster live (see below). |
+| Second model | **`gemini-4-hydrogen`**: (1) a second opinion when the main model flags more than 2 fields: the two answers are compared field by field, the main model's values are kept, and every field where they differ is flagged "Two AI models disagreed; please check"; (2) a stand-in when the main model times out or is overloaded. |
+| Time limit | Each Gemini call gets **20 s** (`GEMINI_TIMEOUT_MS`). On a timeout, 429 or 503/504 the app goes straight to the other model instead of waiting; only brief glitches (500/502, dropped connection) get one quick retry. Hydrogen often needs longer than 20 s live, so its second opinion may time out; the main model's answer is then kept and the timeout is logged. |
+| Saved results | The same file (SHA-256) uploaded again by the same business reuses the saved result: no API call, badge "Read by Gemini (saved result)". Kept in memory, up to 200 results; only successful Gemini reads are saved. |
 | Not used | `gemini-4-carbon` was tested as a stronger second model but returned `403 Access requires an eligible paid billing account in a supported region` on this project. |
 | Code, not AI | Visit schedule, renewal date, days overdue, rupee totals, site-to-visit matching and all validation are computed in code. |
 
-Every contract result carries `extraction_method` (e.g. `gemini:gemini-4-hydrogen`, or `fallback_parser` if Gemini failed)
+Every contract result carries `extraction_method` (e.g. `gemini:gemini-3.8-flash`, `saved:gemini:gemini-3.8-flash` for a reused result, or `fallback_parser` if Gemini failed)
 and an `extraction_log` explaining any second-model retry, for example
-`gemini-4-hydrogen flagged 3 fields (more than 2)`, with the list of fields where the two models disagreed.
+`gemini-3.8-flash flagged 3 fields (more than 2)`, with the list of fields where the two models disagreed.
 The contract screen shows both under a "Read by …" badge.
 
-## Accuracy (live tests, 2026-11-20)
+## Speed and accuracy on the live site (2026-11-20)
+
+Contract and voice times measured on Cloud Run, one request at a time, timed from upload to answer.
+
+| | Hydrogen first, 60 s waits (before) | **Flash first, 20 s switch (now)** |
+|---|---|---|
+| Contract uploads C1, C2, C4 photo | median 64.6 s, range 55.1–108.1 s (Vertex 504/429 retries) | **median 7.7 s, range 5.9–17.2 s** |
+| Voice notes V1, V2, V3 | median 19.4 s, range 13.3–37.5 s | **median 5.7 s, range 4.8–6.0 s** |
+| Repeat upload of the same file | 79.5 s (no cache) | **0.1 s** (saved result) |
+| Accuracy C1 / C2 / C4 photo | 10/10, 8/8, 9/9 | **10/10, 8/8, 9/9** (scored on the live site) |
+
+## Accuracy detail (live tests, 2026-11-20)
+
+The tables below were measured with Hydrogen as the main model; Flash as the main model gives the same contract scores.
 
 Real Gemini calls, scored against `demo-data/KAJ_Demo_Data/AnswerKey.csv`.
 
@@ -100,8 +115,9 @@ Key variables:
 | `GEMINI_USE_VERTEX` | `true` to use Vertex AI with Application Default Credentials (no API key) |
 | `GOOGLE_CLOUD_PROJECT` | Project for Vertex AI |
 | `GOOGLE_CLOUD_LOCATION` | Vertex AI location (default `global`) |
-| `GEMINI_MODEL` | Main model (default `gemini-4-hydrogen`) |
-| `GEMINI_FALLBACK_MODEL` | Second model (we use `gemini-3.8-flash`). If unset, second opinions and stand-ins are skipped. |
+| `GEMINI_MODEL` | Main model (we use `gemini-3.8-flash`, also the default) |
+| `GEMINI_FALLBACK_MODEL` | Second model (we use `gemini-4-hydrogen`). If unset, second opinions and stand-ins are skipped. |
+| `GEMINI_TIMEOUT_MS` | Per-call time limit before switching model (default `20000`) |
 | `GEMINI_API_KEY` | Only for API-key mode (never logged) |
 | `KAJ_STORE` | `local` forces the local JSON store (used on Cloud Run for the demo) |
 | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Firestore service account (production) |
@@ -144,8 +160,8 @@ Or build once and let Express serve everything: `npm run build && node server.js
    kept and the field is flagged "Two AI models disagreed; please check" (with both values). Wording-only
    differences (case, "Split AC units" vs "split AC") count as agreement. The reason and the list of
    disagreements are logged and shown on screen.
-4. Transient errors (429/5xx/overload) are retried with backoff; if the main model stays unavailable
-   or its daily quota is used up, the second model is tried.
+4. Each call has 20 s. A timeout, 429 or 503/504 switches straight to the other model; brief glitches get
+   one quick retry. A file already read before (same SHA-256) reuses the saved result with no API call.
 5. Only if Gemini fails completely does a rule-based parser run. It adds
    "AI extraction failed; please check all fields". An upload where nothing could be read is
    marked `extraction_failed` and cannot be saved.
@@ -190,6 +206,7 @@ Or build once and let Express serve everything: `npm run build && node server.js
 |---------|----------------|
 | `NODE_ENV=test node tests/test_step6_live.js` | **Live Gemini** contract extraction of C1 and C2 through the real upload route, scored against `AnswerKey.csv`; also checks upload names are unique |
 | `NODE_ENV=test node tests/test_step6_live.js "demo-data/KAJ_Demo_Data/C4_photo.jpeg=C4"` | Same, plus a contract photo (hand-copied C4 contract, photographed) |
+| `KAJ_BASE_URL=https://… NODE_ENV=test node tests/test_step6_live.js …` | Same scoring against a deployed site |
 | `node tests/test_second_opinion.js` | Second-opinion merge with **mocked** C5 answers (no network): disagreements flagged, main values kept, no retry at 2 flags, stand-in on 503 |
 | `NODE_ENV=test node tests/test_voice_live.js [V1 V2 …]` | **Live Gemini** voice extraction of `v1.ogg`–`v5.ogg` (or the ones named), scored against the V rows of `AnswerKey.csv` |
 | `node tests/test_step3.js`, `test_step4.js`, `test_step5.js` | Earlier step tests (extraction, visit confirmation, rate-card billing) |

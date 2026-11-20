@@ -1,5 +1,6 @@
 // Step 6 live test: real Gemini calls (no mocks) through POST /api/contracts/extract.
 // Run with:  NODE_ENV=test node tests/test_step6_live.js [extra files...]
+// Against a deployed site: KAJ_BASE_URL=https://… NODE_ENV=test node tests/test_step6_live.js …
 // Each extra file arg is "<path>[=<AnswerKey item, e.g. C4>]".
 // Never prints the API key.
 import fs from 'fs'
@@ -69,11 +70,12 @@ const isFlagged = (field, notes) => notes.some(n => (FLAG_WORDS[field] || new Re
 
 // ── Run one file through the real route ─────────────────────────────────────
 async function extractViaRoute(base, filePath) {
+  // (tenant header matches the app's default tenant)
   const ext = path.extname(filePath).toLowerCase()
   const type = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' }[ext]
   const form = new FormData()
   form.append('file', new Blob([fs.readFileSync(filePath)], { type }), path.basename(filePath))
-  const res = await fetch(`${base}/api/contracts/extract`, { method: 'POST', body: form })
+  const res = await fetch(`${base}/api/contracts/extract`, { method: 'POST', headers: { 'x-tenant-id': 'das-cooling-services' }, body: form })
   const body = await res.json()
   if (!res.ok) throw new Error(body.error || res.status)
   return body.extracted
@@ -104,8 +106,9 @@ function report(label, item, x, key) {
 
 async function main() {
   const key = loadAnswerKey()
-  const server = app.listen(0)
-  const base = `http://127.0.0.1:${server.address().port}`
+  // KAJ_BASE_URL=https://… scores a deployed site instead of a local server
+  const server = process.env.KAJ_BASE_URL ? null : app.listen(0)
+  const base = process.env.KAJ_BASE_URL || `http://127.0.0.1:${server.address().port}`
   const cases = [
     [path.join(DATA, 'C1_greenview.pdf'), 'C1'],
     [path.join(DATA, 'C2_ballygunge_dental.pdf'), 'C2'],
@@ -126,7 +129,7 @@ async function main() {
     const again = await extractViaRoute(base, cases[0][0])
     console.log(`\nUnique upload names: ${refs[0]} vs ${again.source_ref} -> ${refs[0] !== again.source_ref ? 'OK' : 'COLLISION'}`)
   } finally {
-    server.close()
+    server?.close()
   }
 }
 
