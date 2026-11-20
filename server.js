@@ -452,32 +452,54 @@ const CORE_FIELDS = ['contract_no', 'client_name', 'start_date', 'end_date', 'vi
 async function extractContract(content, mimeType, rawText = '') {
   let parsed = null
 
+  // Records which model answered and why a second model was asked, so the badge can be explained.
+  const log = { primary_model: MODEL_PRIMARY }
+
   if (GEMINI_ENABLED) {
     try {
       parsed = await extractContractWithModel(MODEL_PRIMARY, content, mimeType)
+      log.primary_flags = parsed.needs_review.length
       if (MODEL_FALLBACK && parsed.needs_review.length > 2) {
+        log.retry_reason = `${MODEL_PRIMARY} flagged ${parsed.needs_review.length} fields (more than 2)`
+        log.retry_model = MODEL_FALLBACK
         try {
           const retry = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
+          log.retry_flags = retry.needs_review.length
           if (retry.needs_review.length < parsed.needs_review.length) {
             parsed = retry
+            log.kept = MODEL_FALLBACK
+          } else {
+            log.kept = MODEL_PRIMARY
           }
         } catch (e) {
+          log.retry_error = String(e.status || e.message).slice(0, 120)
+          log.kept = MODEL_PRIMARY
           console.warn(`Gemini retry with ${MODEL_FALLBACK} failed:`, e.message)
         }
       }
     } catch (e) {
       // e.message from the SDK does not include the API key
       console.warn(`Gemini extraction with ${MODEL_PRIMARY} failed:`, e.message)
+      log.primary_error = String(e.status || e.message).slice(0, 120)
       // Primary model still overloaded after retries: try the second model before the parser.
       if (MODEL_FALLBACK && isRetryableGeminiError(e)) {
+        log.retry_reason = `${MODEL_PRIMARY} unavailable (${e.status || 'network'})`
+        log.retry_model = MODEL_FALLBACK
         try {
           parsed = await extractContractWithModel(MODEL_FALLBACK, content, mimeType)
+          log.retry_flags = parsed.needs_review.length
+          log.kept = MODEL_FALLBACK
         } catch (e2) {
+          log.retry_error = String(e2.status || e2.message).slice(0, 120)
           console.warn(`Gemini extraction with ${MODEL_FALLBACK} failed:`, e2.message)
         }
       }
       if (!parsed) console.warn('Falling back to rule-based parser.')
     }
+  }
+  if (log.retry_reason) {
+    // One structured line per retry (Cloud Logging shows JSON fields)
+    console.log(JSON.stringify({ message: 'contract extraction retry', ...log }))
   }
 
   if (!parsed) {
@@ -485,6 +507,7 @@ async function extractContract(content, mimeType, rawText = '') {
     parsed.extraction_method = 'fallback_parser'
     parsed.needs_review.unshift(AI_FAILED_NOTE)
   }
+  parsed.extraction_log = log
 
   // A photo/PDF that yields no core fields is a failed extraction, not an empty record.
   const nothingRead = CORE_FIELDS.every(f => parsed[f] === null || parsed[f] === undefined || parsed[f] === '')

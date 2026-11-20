@@ -246,7 +246,7 @@ export default function ContractsScreen({ showToast }) {
         <h2>Review Extracted Data</h2>
       </div>
 
-      <ExtractionBadge method={extracted.extraction_method} />
+      <ExtractionBadge method={extracted.extraction_method} log={extracted.extraction_log} />
 
       {extracted.needs_review?.length > 0 && (
         <div className="review-strip">
@@ -293,7 +293,7 @@ export default function ContractsScreen({ showToast }) {
           <h2 style={{ flex: 1 }}>{c.client_name}</h2>
         </div>
 
-        <ExtractionBadge method={c.extraction_method} />
+        <ExtractionBadge method={c.extraction_method} log={c.extraction_log} />
 
         {c.needs_review?.length > 0 && (
           <div className="review-strip">
@@ -365,11 +365,22 @@ function extractionLabel(method) {
   return `Read by ${method}`
 }
 
-function ExtractionBadge({ method }) {
+function ExtractionBadge({ method, log }) {
   const label = extractionLabel(method)
   if (!label) return null
   const cls = method === 'fallback_parser' ? 'badge badge-warning' : 'badge badge-gray'
-  return <div style={{ marginBottom: 10 }}><span className={cls} title={method}>{label}</span></div>
+  // Explain a second-model retry: why it happened and which answer was kept
+  const why = log?.retry_reason
+    ? `Second opinion asked because ${log.retry_reason}` +
+      (log.retry_flags !== undefined ? `; ${log.retry_model} flagged ${log.retry_flags}` : '') +
+      (log.kept ? `. Kept ${extractionLabel('gemini:' + log.kept).replace('Read by ', '')}'s answer.` : '.')
+    : null
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <span className={cls} title={method}>{label}</span>
+      {why && <p style={{ fontSize: '.72rem', color: 'var(--gray-500)', marginTop: 4 }}>{why}</p>}
+    </div>
+  )
 }
 
 const EDITABLE_FIELDS = {
