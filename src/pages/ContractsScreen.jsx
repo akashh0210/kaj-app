@@ -65,12 +65,25 @@ export default function ContractsScreen({ showToast }) {
 
   useEffect(() => { loadContracts() }, [])
 
+  // Step text while extracting. Step 1 lasts as long as the Gemini call; steps 2 and 3
+  // (date checks, schedule) run on the server in the same request, so they are ticked
+  // off briefly once the answer arrives.
+  const [extractStep, setExtractStep] = useState(0)
+  async function finishSteps() {
+    for (const step of [2, 3]) {
+      setExtractStep(step)
+      await new Promise(r => setTimeout(r, 350))
+    }
+  }
+
   async function handleFile(file) {
     if (!file) return
     setExtracting(true)
+    setExtractStep(1)
     setView('extract')
     try {
       const { extracted: data } = await extractContractFile(file)
+      await finishSteps()
       setExtracted(data) // keep the server's unique source_ref
       setView('confirm')
     } catch (e) {
@@ -84,9 +97,11 @@ export default function ContractsScreen({ showToast }) {
   async function handlePaste() {
     if (!pasteText.trim()) return showToast('Please enter contract text.')
     setExtracting(true)
+    setExtractStep(1)
     setView('extract')
     try {
       const { extracted: data } = await extractContractText(pasteText)
+      await finishSteps()
       setExtracted(data)
       setView('confirm')
     } catch (e) {
@@ -230,9 +245,18 @@ export default function ContractsScreen({ showToast }) {
   // ── Extracting ─────────────────────────────────────────────────────────────
   if (view === 'extract') return (
     <div className="loading-screen" role="status" aria-live="polite">
-      <div className="spinner" />
-      <p style={{ color: 'var(--text)' }}>Extracting contract details with AI…</p>
-      <p style={{ fontSize: '.85rem' }}>This may take a few seconds</p>
+      <ol className="extract-steps">
+        {EXTRACT_STEPS.map((label, i) => {
+          const n = i + 1
+          const state = extractStep > n ? 'done' : extractStep === n ? 'active' : 'todo'
+          return (
+            <li key={label} className={`extract-step ${state}`} aria-current={state === 'active' ? 'step' : undefined}>
+              <span className="extract-step-mark" aria-hidden="true">{state === 'done' ? <Check size={14} /> : null}</span>
+              {label}
+            </li>
+          )
+        })}
+      </ol>
     </div>
   )
 
@@ -315,6 +339,8 @@ export default function ContractsScreen({ showToast }) {
   return null
 }
 
+const EXTRACT_STEPS = ['Reading contract with Gemini…', 'Checking dates…', 'Building schedule…']
+
 function ReviewSlip({ notes }) {
   if (!notes?.length) return null
   return (
@@ -341,6 +367,7 @@ function VisitSchedule({ dates }) {
 function extractionLabel(method) {
   if (!method) return null
   if (method === 'fallback_parser') return 'Read by backup parser (AI failed)'
+  if (method.startsWith('saved:')) return 'Read by Gemini (saved result)'
   if (method.startsWith('gemini:')) {
     const name = method.slice('gemini:'.length)
       .split('-')
@@ -358,7 +385,9 @@ function ExtractionBadge({ method, log }) {
   // Explain a second-model retry: why it happened and which answer was kept
   const name = m => extractionLabel('gemini:' + m).replace('Read by ', '')
   const n = log?.disagreements?.length
-  const why = log?.retry_reason
+  const why = log?.saved_result
+    ? 'Same file as an earlier upload, so the saved result was reused with no new AI call.'
+    : log?.retry_reason
     ? `Second opinion from ${name(log.retry_model)} because ${log.retry_reason}. ` +
       (n === undefined ? (log.kept ? `Kept ${name(log.kept)}'s answer.` : '')
         : n === 0 ? 'Both models agreed on every field.'

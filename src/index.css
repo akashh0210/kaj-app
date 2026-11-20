@@ -266,3 +266,11 @@ h3 { font-size: 1rem; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Extraction steps */
+.extract-steps { list-style: none; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.extract-step { display: flex; align-items: center; gap: 12px; font-size: .95rem; color: var(--text-2); }
+.extract-step.active, .extract-step.done { color: var(--text); }
+.extract-step-mark { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--hairline); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.extract-step.active .extract-step-mark { border-color: var(--hairline); border-top-color: var(--blue); animation: spin .8s linear infinite; }
+.extract-step.done .extract-step-mark { border-color: var(--blue); background: var(--blue); color: var(--bg); }

@@ -26,7 +26,7 @@ const { db, Timestamp } = await initDb()
 
 // ── Gemini ───────────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-const MODEL_PRIMARY = process.env.GEMINI_MODEL || 'gemini-4-hydrogen'
+const MODEL_PRIMARY = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
 // Second model for the "too many flags" retry. If unset, the retry is skipped.
 const MODEL_FALLBACK = process.env.GEMINI_FALLBACK_MODEL || null
 
@@ -94,8 +94,9 @@ function daysOverdue(dueDate, today = todayIST()) {
   return Math.max(0, Math.round((Date.parse(today) - Date.parse(dueDate)) / 86400000))
 }
 
-// Per-call timeout so a hung request never leaves a spinner running forever.
-const GEMINI_REQUEST_OPTIONS = { timeout: 60_000 }
+// Per-call timeout: a slow model is abandoned for the other model instead of waited on.
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 20_000
+const GEMINI_REQUEST_OPTIONS = { timeout: GEMINI_TIMEOUT_MS }
 
 // Retry transient Gemini failures (rate limits, overload, network) with backoff.
 // Non-transient errors (bad key, bad request, JSON parse) are thrown immediately.
@@ -112,12 +113,18 @@ function isTimeoutError(e) {
 function isDailyQuotaError(e) {
   return e?.status === 429 && /per ?day|PerDay/i.test(e?.message || '')
 }
-async function withGeminiRetry(label, fn, attempts = 3) {
+// Timeouts, rate limits (429) and overload (503/504) go straight to the other model:
+// waiting on the same model is what made live uploads take 55-108 s.
+function isSwitchModelError(e) {
+  return isTimeoutError(e) || [429, 503, 504].includes(e?.status) || /RESOURCE_EXHAUSTED|UNAVAILABLE|overloaded|high demand/i.test(e?.message || '')
+}
+// Only brief glitches (500/502, dropped connection) get one quick retry on the same model.
+async function withGeminiRetry(label, fn, attempts = 2) {
   for (let i = 1; ; i++) {
     try {
       return await fn()
     } catch (e) {
-      if (i >= attempts || !isRetryableGeminiError(e) || isDailyQuotaError(e) || isTimeoutError(e)) throw e
+      if (i >= attempts || !isRetryableGeminiError(e) || isSwitchModelError(e)) throw e
       const delay = 1000 * 2 ** (i - 1) + Math.floor(Math.random() * 400)
       console.warn(`${label}: Gemini attempt ${i} failed (${e.status || 'network'}); retrying in ${delay}ms`)
       await new Promise(r => setTimeout(r, delay))
@@ -545,7 +552,8 @@ async function extractContract(content, mimeType, rawText = '', { callModel = ex
   }
 
   if (!parsed) {
-    parsed = parseContractText(rawText || (mimeType === 'text/plain' ? content : ''))
+    const text = typeof rawText === 'function' ? rawText() : rawText // PDF text read lazily
+    parsed = parseContractText(text || (mimeType === 'text/plain' ? content : ''))
     parsed.extraction_method = 'fallback_parser'
     parsed.needs_review.unshift(AI_FAILED_NOTE)
   }
@@ -627,10 +635,33 @@ app.get('/api/contracts', async (req, res) => {
   }
 })
 
+// ── Saved-result cache ──────────────────────────────────────────────────────
+// Same file (SHA-256) uploaded again by the same business with the same model: reuse the
+// saved Gemini result instead of calling the API. Only successful Gemini reads are saved.
+const EXTRACTION_CACHE_MAX = 200
+const extractionCache = new Map() // key -> { result, savedAt }
+const cacheKey = (tenantId, hash) => `${tenantId}:${MODEL_PRIMARY}:${hash}`
+const sha256 = data => crypto.createHash('sha256').update(data).digest('hex')
+
+function getSavedResult(tenantId, hash) {
+  const hit = extractionCache.get(cacheKey(tenantId, hash))
+  if (!hit) return null
+  const result = structuredClone(hit.result)
+  result.extraction_log = { saved_result: true, original_method: result.extraction_method, saved_at: hit.savedAt, sha256: hash }
+  result.extraction_method = `saved:${result.extraction_method}`
+  return result
+}
+
+function saveResult(tenantId, hash, result) {
+  if (!String(result.extraction_method).startsWith('gemini:') || result.extraction_failed) return
+  if (extractionCache.size >= EXTRACTION_CACHE_MAX) extractionCache.delete(extractionCache.keys().next().value)
+  extractionCache.set(cacheKey(tenantId, hash), { result: structuredClone(result), savedAt: new Date().toISOString() })
+}
+
 app.post('/api/contracts/extract', upload.single('file'), async (req, res) => {
   try {
     const tenantId = getTenantId(req)
-    let content, mimeType, rawText = ''
+    let content, mimeType, rawText = '', hash
     let sourceRef = 'pasted-text'
     let sourceUrl = null
     let originalFilename = null
@@ -649,19 +680,28 @@ app.post('/api/contracts/extract', upload.single('file'), async (req, res) => {
       const buffer = fs.readFileSync(targetPath)
       content = buffer.toString('base64')
       mimeType = req.file.mimetype || 'application/pdf'
+      hash = sha256(buffer)
 
       if (mimeType === 'application/pdf' || req.file.originalname.endsWith('.pdf')) {
-        rawText = extractTextFromPdf(targetPath)
+        // PDF text is only needed by the fallback parser, so read it only if that runs
+        rawText = () => extractTextFromPdf(targetPath)
       }
     } else if (req.body.text) {
       content = req.body.text
       mimeType = 'text/plain'
       rawText = req.body.text
+      hash = sha256(req.body.text)
     } else {
       return res.status(400).json({ error: 'Provide a file or text field.' })
     }
 
-    const extracted = await extractContract(content, mimeType, rawText)
+    let extracted = getSavedResult(tenantId, hash)
+    if (extracted) {
+      console.log(JSON.stringify({ message: 'contract extraction saved result reused', sha256: hash.slice(0, 12) }))
+    } else {
+      extracted = await extractContract(content, mimeType, rawText)
+      saveResult(tenantId, hash, extracted)
+    }
     extracted.tenant_id = tenantId
     extracted.source_ref = sourceRef
     extracted.source_url = sourceUrl
